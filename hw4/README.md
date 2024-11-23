@@ -16,7 +16,7 @@ For this homework, you will need to run the CARLA Simulator. Please ensure your 
     
     Download the model’s checkpoint and testing data from [Google Drive](https://drive.google.com/drive/folders/1EH0KRhf8-4f0X1h3rsOAB8FQmzI85ULn?usp=sharing).
 
-    Place the checkpoint files in the `pdm-f24/team_code/checkpoint` directory and the testing data in the `pdm-f24/data1` directory.
+    Place the checkpoint files in the `hw4/team_code/checkpoint` directory and the testing data in the `hw4/data1` directory.
 3. **Set Up and Activate the Conda Environment:**
 
     ```shell
