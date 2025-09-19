@@ -2,7 +2,7 @@
 
 NYCU Physical AI 2025 Fall
 
-Spec: 
+Spec: https://docs.google.com/document/d/1AGyn_86wDJFglbIqMNx1RYWl1Sz4GJe2/edit
 
 ## Introduction 
 In this course, we are going to build an indoor navigation system in Habitat step by step during homework 1 ~ 2 and the final project. This homework 0 will help you to build the environment with essential packages.
