@@ -1,11 +1,11 @@
-# pdm-f24-hw0
+# pysical-ai-hw0
 
-NYCU Perception and Decision Making 2024 Fall
+NYCU Physical AI 2025 Fall
 
-Spec: https://docs.google.com/document/d/1DHr3-iiZNR1UNKYoBC-aF7qijACRdsjz/edit
+Spec: 
 
 ## Introduction 
-In this course, we are going to build an indoor navigation system in Habitat step by step during homework 1 ~ 3 and the final project. This homework 0 will help you to build the environment with essential packages.
+In this course, we are going to build an indoor navigation system in Habitat step by step during homework 1 ~ 2 and the final project. This homework 0 will help you to build the environment with essential packages.
 
 ## Requirements
 - OS : Ubuntu Desktop 18.04, 20.04
@@ -17,10 +17,10 @@ In this course, we are going to build an indoor navigation system in Habitat ste
 ## Installation
 
 ### Clone the repo
-`git clone git@github.com:HCIS-Lab/pdm-f24.git` to download the repo or create a new fork on you own GitHub account.
+`git clone git@github.com:HCIS-Lab/physical-ai25.git` to download the repo or create a new fork on you own GitHub account.
 
 ```bash
-cd pdm-f24/hw0
+cd physical-ai25/hw0
 # Ensure the latest submodules
 git submodule update --init --recursive
 # Create a conda env
