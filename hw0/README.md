@@ -42,6 +42,8 @@ Install VcXsrv on your device by [official website](https://vcxsrv.com/)
 Configure your VcXsrv to allow connections from WSL2. You can do this by running the following command in your WSL2 terminal:
 
 ```bash
+# Set the DISPLAY environment variable to point to the Windows host
+export DISPLAY=$(grep -m1 nameserver /etc/resolv.conf | awk '{print $2}'):0.0
 unset LIBGL_ALWAYS_INDIRECT
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
