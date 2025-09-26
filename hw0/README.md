@@ -16,7 +16,7 @@ In this course, we are going to build an indoor navigation system in Habitat ste
 
 ## Installation
 
-### Clone the repo
+### 1. Clone the repo
 `git clone git@github.com:HCIS-Lab/physical-ai25.git` to download the repo or create a new fork on you own GitHub account.
 
 ```bash
@@ -35,7 +35,7 @@ cd habitat-sim && pip install -r requirements.txt && python setup.py install --b
 cd habitat-lab && pip install -r requirements.txt && python setup.py develop && cd ..
 ```
 
-**if using WSL2 on Windows**
+#### if using WSL2 on Windows
 
 Install VcXsrv on your device by [official website](https://vcxsrv.com/)
 
@@ -63,10 +63,27 @@ Open VcXsrv with the following configuration:
 3. Optional: Save the configuration file for later use
 4. Now, you may see the X server icon on your taskbar (Taskbar is at the down-right corner of your screen with `^` icon)
 
-### Download dataset
+### 2. Download dataset
 
 Download dataset from [here](https://drive.google.com/file/d/1zHA2AYRtJOmlRaHNuXOvC_OaVxHe56M4/view)
 and put the directory under `replica_v1/`
+
+After downloading and unzipping, your directory structure should look like this:
+```
+hw0/
+├── habitat-lab/
+├── habitat-sim/
+├── replica_v1/
+│   ├── __MACOSX/
+│   ├── apartment_0/
+│   │   ├── habitat/
+│   │   ├── textures/
+│   │   └── <Other files>
+│   └── .gitignore
+├── load.py
+├── README.md
+└── requirements.txt
+```
 
 ## Tasks
 
