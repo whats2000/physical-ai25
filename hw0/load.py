@@ -101,7 +101,12 @@ agent = sim.initialize_agent(sim_settings["default_agent"])
 
 # Set agent state
 agent_state = habitat_sim.AgentState()
-agent_state.position = np.array([0.0, 0.0, 0.0])  # agent in world space
+
+#######################################################################################
+# You can set the agent's position, if you want second floor, change to [0.0, 1.0, 0.0]
+agent_state.position = np.array([0.0, 0.0, 0.0])  # Agent in world space
+#######################################################################################
+
 agent.set_state(agent_state)
 
 # obtain the default, discrete actions that an agent can perform
