@@ -1,7 +1,7 @@
-# pdm-f24-hw3
-NYCU Perception and Decision Making 2024 Fall
+# physical-ai-hw3
+NYCU Perception and Decision Making 2025 Fall
 
-In your original pdm-f24 directory, `git pull` to get new `hw3` directory.
+In your original physical-ai directory, `git pull` to get new `hw3` directory.
 
 # hw3 Robot Manipulation
 
