@@ -141,6 +141,7 @@ if __name__ == "__main__":
     cv2.imshow('image', img)
     cv2.setMouseCallback('image', click_event)
     cv2.waitKey(0)
+    cv2.imwrite(f'selected_pixels_{len(points)}.png', img)
     cv2.destroyAllWindows()
 
     projection = Projection(front_rgb, points)
