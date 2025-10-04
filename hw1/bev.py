@@ -3,6 +3,7 @@ import numpy as np
 
 points = []
 
+
 class Projection(object):
 
     def __init__(self, image_path, points):
@@ -21,14 +22,78 @@ class Projection(object):
             Project the top view pixels to the front view pixels.
             :return: New pixels on perspective(front) view image
         """
+        # Convert the points to numpy array
+        points_np = np.array(points)
 
-        ### TODO ###
-        return new_pixels
+        # Intrinsic parameters
+        focal_length_x = (self.width / 2) / np.tan(np.radians(fov) / 2)  # fx
+        focal_length_y = (self.height / 2) / np.tan(np.radians(fov) / 2) # fy
+        center_x = self.width / 2  # cx
+        center_y = self.height / 2 # cy
+        # Intrinsic matrix (K)
+        intrinsic_matrix = np.array([
+            [focal_length_x, 0, center_x],
+            [0, focal_length_y, center_y],
+            [0, 0, 1]
+        ])
+        # Inverse of intrinsic matrix (K^-1)
+        intrinsic_matrix_inverse = np.linalg.inv(intrinsic_matrix)
+
+        # Extrinsic parameters
+        rotation_front_to_world = np.array([
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1]
+        ])
+        translation_front_to_world = np.array([
+            [0],
+            [1],
+            [0]
+        ])
+        rotation_bev_to_world = np.array([
+            [1, 0, 0],
+            [0, 0, 1],
+            [0, -1, 0]
+        ])
+        translation_bev_to_world = np.array([
+            [0],
+            [2.5],
+            [0]
+        ])
+
+        # Convert all points to homogeneous coordinates
+        pixels_homogeneous = np.hstack([points_np, np.ones((points_np.shape[0], 1))])
+
+        # Convert the pixel coordinates to camera direction vectors
+        camera_direction_vectors = intrinsic_matrix_inverse.dot(pixels_homogeneous.T).T
+
+        # Convert the camera direction vectors to world coordinates
+        world_direction_vectors = rotation_bev_to_world.dot(camera_direction_vectors.T).T
+
+        # Compute scaling factors (lambda) for intersection with ground y = 0
+        scale_values = -translation_bev_to_world[1] / world_direction_vectors[:, 1]
+
+        # Compute world points on the ground plane
+        world_points = translation_bev_to_world.T + (world_direction_vectors.T * scale_values).T
+
+        # Convert world coordinates to front camera coordinates
+        points_front_camera = (rotation_front_to_world.T.dot((world_points - translation_front_to_world.T).T)).T
+
+        # Project the front camera coordinates to pixel coordinates
+        projected_pixels_homogeneous = intrinsic_matrix.dot(points_front_camera.T).T
+
+        # Convert homogeneous coordinates to 2D pixel coordinates
+        projected_pixels = projected_pixels_homogeneous[:, :2] / projected_pixels_homogeneous[:, 2][:, np.newaxis]
+
+        return projected_pixels.astype(int).tolist()
 
     def show_image(self, new_pixels, img_name='projection.png', color=(0, 0, 255), alpha=0.4):
         """
             Show the projection result and fill the selected area on perspective(front) view image.
         """
+        if len(new_pixels) == 0:
+            print("No points to project!")
+            return self.image
 
         new_image = cv2.fillPoly(
             self.image.copy(), [np.array(new_pixels)], color)
@@ -47,7 +112,6 @@ class Projection(object):
 def click_event(event, x, y, flags, params):
     # checking for left mouse clicks
     if event == cv2.EVENT_LBUTTONDOWN:
-
         print(x, ' ', y)
         points.append([x, y])
         font = cv2.FONT_HERSHEY_SIMPLEX
@@ -57,7 +121,6 @@ def click_event(event, x, y, flags, params):
 
     # checking for right mouse clicks
     if event == cv2.EVENT_RBUTTONDOWN:
-
         print(x, ' ', y)
         font = cv2.FONT_HERSHEY_SIMPLEX
         b = img[y, x, 0]
@@ -68,7 +131,6 @@ def click_event(event, x, y, flags, params):
 
 
 if __name__ == "__main__":
-
     pitch_ang = -90
 
     front_rgb = "bev_data/front1.png"
