@@ -141,12 +141,12 @@ if __name__ == "__main__":
     cv2.imshow('image', img)
     cv2.setMouseCallback('image', click_event)
     cv2.waitKey(0)
-    cv2.imwrite('selected_pixels_front1.png', img)
+    cv2.imwrite('output/selected_pixels_front1.png', img)
     cv2.destroyAllWindows()
 
     projection = Projection(front_rgb, points)
     new_pixels = projection.top_to_front(theta=pitch_ang)
-    projection.show_image(new_pixels, img_name='projection_front1.png')
+    projection.show_image(new_pixels, img_name='output/projection_front1.png')
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
@@ -159,9 +159,9 @@ if __name__ == "__main__":
     cv2.imshow('image', img)
     cv2.setMouseCallback('image', click_event)
     cv2.waitKey(0)
-    cv2.imwrite('selected_pixels_front2.png', img)
+    cv2.imwrite('output/selected_pixels_front2.png', img)
 
     projection = Projection(front_rgb, points)
     new_pixels = projection.top_to_front(theta=pitch_ang)
     print(new_pixels)
-    projection.show_image(new_pixels, img_name='projection_front2.png')
+    projection.show_image(new_pixels, img_name='output/projection_front2.png')
