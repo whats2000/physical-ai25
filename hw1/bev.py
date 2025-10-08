@@ -108,7 +108,6 @@ class Projection(object):
 
         # Convert homogeneous coordinates to 2D pixel coordinates
         # [u', v', w] -> [u'/w, v'/w] = [u, v]
-        print(front_image_points_homogeneous)
         front_image_points = front_image_points_homogeneous[:, :2] / front_image_points_homogeneous[:, 2:]
 
         return front_image_points.astype(np.int32).tolist()
