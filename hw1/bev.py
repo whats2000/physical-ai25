@@ -19,9 +19,16 @@ class Projection(object):
             self.image = cv2.imread(image_path)
         self.height, self.width, self.channels = self.image.shape
 
-    def top_to_front(self, theta=0, phi=0, gamma=0, dx=0, dy=0, dz=0, fov=90):
+    def top_to_front(self, alpha=0.0, beta=0.0, gamma=0.0, dx=0.0, dy=0.0, dz=0.0, fov=90.0) -> List[List[int]]:
         """
         Project the top view pixels to the front view pixels.
+        :param alpha: Rotation angle around z-axis (in degrees)
+        :param beta: Rotation angle around y-axis (in degrees)
+        :param gamma: Rotation angle around x-axis (in degrees)
+        :param dx: Translation along x-axis
+        :param dy: Translation along y-axis
+        :param dz: Translation along z-axis
+        :param fov: Field of view of the camera (in degrees)
         :return: New pixels on perspective(front) view image
         """
         # Convert the points to numpy array
@@ -52,15 +59,28 @@ class Projection(object):
             [1],
             [0]
         ])
-        rotation_bev_to_world = np.array([
-            [1, 0, 0],
-            [0, 0, 1],
-            [0, -1, 0]
+        # Rotation matrices around x, y, z axes
+        rotation_z = np.array([
+            [np.cos(np.radians(alpha)), -np.sin(np.radians(alpha)), 0],
+            [np.sin(np.radians(alpha)), np.cos(np.radians(alpha)), 0],
+            [0, 0, 1]
         ])
+        rotation_y = np.array([
+            [np.cos(np.radians(beta)), 0, np.sin(np.radians(beta))],
+            [0, 1, 0],
+            [-np.sin(np.radians(beta)), 0, np.cos(np.radians(beta))]
+        ])
+        rotation_x = np.array([
+            [1, 0, 0],
+            [0, np.cos(np.radians(gamma)), -np.sin(np.radians(gamma))],
+            [0, np.sin(np.radians(gamma)), np.cos(np.radians(gamma))]
+        ])
+        rotation_bev_to_world = rotation_z.dot(rotation_y).dot(rotation_x)
+        # Translation vector
         translation_bev_to_world = np.array([
-            [0],
-            [2.5],
-            [0]
+            [dx],
+            [dy],
+            [dz]
         ])
 
         # Convert all points to homogeneous coordinates
@@ -89,7 +109,7 @@ class Projection(object):
 
         return projected_pixels.astype(int).tolist()
 
-    def show_image(self, new_pixels: List[List[int]], img_name='projection.png', color=(0, 0, 255), alpha=0.4):
+    def show_image(self, new_pixels: List[List[int]], img_name='projection.png', color=(0, 0, 255), alpha=0.4) -> np.ndarray:
         """
         Show the projection result and fill the selected area on perspective(front) view image.
         """
@@ -147,7 +167,7 @@ if __name__ == "__main__":
     cv2.destroyAllWindows()
 
     projection = Projection(front_rgb)
-    new_transform_pixels = projection.top_to_front(theta=pitch_ang)
+    new_transform_pixels = projection.top_to_front(gamma=pitch_ang, dy=2.5, fov=90.0)
     projection.show_image(new_transform_pixels, img_name='output/projection_front1.png')
     cv2.waitKey(0)
     cv2.destroyAllWindows()
@@ -164,5 +184,5 @@ if __name__ == "__main__":
     cv2.imwrite('output/selected_pixels_front2.png', img)
 
     projection = Projection(front_rgb)
-    new_transform_pixels = projection.top_to_front(theta=pitch_ang)
+    new_transform_pixels = projection.top_to_front(gamma=pitch_ang, dy=2.5, fov=90.0)
     projection.show_image(new_transform_pixels, img_name='output/projection_front2.png')
