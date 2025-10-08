@@ -44,72 +44,77 @@ class Projection(object):
             [focal_length_x, 0, center_x],
             [0, focal_length_y, center_y],
             [0, 0, 1]
-        ])
+        ], dtype=np.float32)
         # Inverse of intrinsic matrix (K^-1)
         intrinsic_matrix_inverse = np.linalg.inv(intrinsic_matrix)
 
-        # Extrinsic parameters
-        rotation_front_to_world = np.array([
+        # Extrinsic parameters (For front view camera)
+        rotation_world_to_front = np.array([
             [1, 0, 0],
             [0, 1, 0],
             [0, 0, 1]
-        ])
-        translation_front_to_world = np.array([
-            [0],
-            [1],
-            [0]
-        ])
-        # Rotation matrices around x, y, z axes
-        rotation_z = np.array([
+        ], dtype=np.float32)
+        translation_world_to_front = np.array([
+            [0.0],
+            [1.0],
+            [0.0],
+        ], dtype=np.float32)
+
+        # Extrinsic parameters (For bev view camera)
+        rotation_world_to_bev_z = np.array([
             [np.cos(np.radians(alpha)), -np.sin(np.radians(alpha)), 0],
             [np.sin(np.radians(alpha)), np.cos(np.radians(alpha)), 0],
             [0, 0, 1]
-        ])
-        rotation_y = np.array([
+        ], dtype=np.float32)
+        rotation_world_to_bev_y = np.array([
             [np.cos(np.radians(beta)), 0, np.sin(np.radians(beta))],
             [0, 1, 0],
             [-np.sin(np.radians(beta)), 0, np.cos(np.radians(beta))]
-        ])
-        rotation_x = np.array([
+        ], dtype=np.float32)
+        rotation_world_to_bev_x = np.array([
             [1, 0, 0],
             [0, np.cos(np.radians(gamma)), -np.sin(np.radians(gamma))],
             [0, np.sin(np.radians(gamma)), np.cos(np.radians(gamma))]
-        ])
-        rotation_bev_to_world = rotation_z.dot(rotation_y).dot(rotation_x)
-        # Translation vector
-        translation_bev_to_world = np.array([
+        ], dtype=np.float32)
+        rotation_world_to_bev = rotation_world_to_bev_z @ rotation_world_to_bev_y @ rotation_world_to_bev_x
+        translation_world_to_bev = np.array([
             [dx],
             [dy],
-            [dz]
-        ])
+            [dz],
+        ], dtype=np.float32)
 
-        # Convert all points to homogeneous coordinates
-        pixels_homogeneous = np.hstack([points_np, np.ones((points_np.shape[0], 1))])
+        # Add the z-axis to the bev points
+        # [u, v] -> [u, v, 1]
+        num_points = points_np.shape[0]
+        bev_points_homogeneous = np.hstack((points_np, np.ones((num_points, 1), dtype=np.float32)))
 
-        # Convert the pixel coordinates to camera direction vectors
-        camera_direction_vectors = intrinsic_matrix_inverse.dot(pixels_homogeneous.T).T
+        # Convert the bev points to the bev camera coordinate system
+        bev_camera_points = (intrinsic_matrix_inverse @ bev_points_homogeneous.T).T
 
         # Convert the camera direction vectors to world coordinates
-        world_direction_vectors = rotation_bev_to_world.dot(camera_direction_vectors.T).T
+        world_direction_vectors = (np.linalg.inv(rotation_world_to_bev) @ bev_camera_points.T).T
 
-        # Compute scaling factors (lambda) for intersection with ground y = 0
-        scale_values = -translation_bev_to_world[1] / world_direction_vectors[:, 1]
+        # Find intersection with ground plane
+        scale_values = -translation_world_to_bev[1, 0] / world_direction_vectors[:, 1]
 
         # Compute world points on the ground plane
-        world_points = translation_bev_to_world.T + (world_direction_vectors.T * scale_values).T
+        world_points_3d = translation_world_to_bev.T + (world_direction_vectors.T * scale_values).T
 
-        # Convert world coordinates to front camera coordinates
-        points_front_camera = (rotation_front_to_world.T.dot((world_points - translation_front_to_world.T).T)).T
+        # Convert the world points to the front camera coordinate system
+        front_camera_points = (rotation_world_to_front @ (world_points_3d.T - translation_world_to_front)).T
 
-        # Project the front camera coordinates to pixel coordinates
-        projected_pixels_homogeneous = intrinsic_matrix.dot(points_front_camera.T).T
+        # Project the front camera points to the front image plane
+        front_image_points_homogeneous = (intrinsic_matrix @ front_camera_points.T).T
 
         # Convert homogeneous coordinates to 2D pixel coordinates
-        projected_pixels = projected_pixels_homogeneous[:, :2] / projected_pixels_homogeneous[:, 2][:, np.newaxis]
+        # [u', v', w] -> [u'/w, v'/w] = [u, v]
+        print(front_image_points_homogeneous)
+        front_image_points = front_image_points_homogeneous[:, :2] / front_image_points_homogeneous[:, 2:]
 
-        return projected_pixels.astype(int).tolist()
+        return front_image_points.astype(np.int32).tolist()
 
-    def show_image(self, new_pixels: List[List[int]], img_name='projection.png', color=(0, 0, 255), alpha=0.4) -> np.ndarray:
+    def show_image(self, new_pixels: List[List[int]], img_name='projection.png', color=(0, 0, 255),
+                   alpha=0.4) -> np.ndarray:
         """
         Show the projection result and fill the selected area on perspective(front) view image.
         """
@@ -153,7 +158,7 @@ def click_event(event: 'cv2.MouseEventTypes', x: int, y: int, _flags, _params):
 
 
 if __name__ == "__main__":
-    pitch_ang = -90
+    pitch_ang = 90
 
     front_rgb = "bev_data/front1.png"
     top_rgb = "bev_data/bev1.png"
