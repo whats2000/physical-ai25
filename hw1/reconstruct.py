@@ -1,332 +1,51 @@
-import argparse
-import glob
-import os
-from typing import Tuple
-
 import numpy as np
 import open3d as o3d
+import argparse
 
 
-def depth_image_to_point_cloud(
-    rgb_image: np.ndarray, 
-    depth_image: np.ndarray
-) -> o3d.geometry.PointCloud:
+def depth_image_to_point_cloud(rgb, depth):
+    # TODO: Get point cloud from rgb and depth image
+    raise NotImplementedError
+    return pcd
+
+
+def preprocess_point_cloud(pcd, voxel_size):
+    # TODO: Do voxelization to reduce the number of points for less memory usage and speedup
+    raise NotImplementedError
+    return pcd_down
+
+
+def execute_global_registration(source_down, target_down, source_fpfh,
+                                target_fpfh, voxel_size):
+    raise NotImplementedError
+    return result
+
+
+def local_icp_algorithm(source_down, target_down, trans_init, threshold):
+    # TODO: Use Open3D ICP function to implement
+    raise NotImplementedError
+    return result
+
+
+def my_local_icp_algorithm(source_down, target_down, trans_init, voxel_size):
+    # TODO: Write your own ICP function
+    raise NotImplementedError
+    return result
+
+
+def reconstruct(args):
+    # TODO: Return results
     """
-    Convert RGB and depth images to a point cloud.
-    
-    :param rgb_image: RGB image array with shape (height, width, 3)
-    :param depth_image: Depth image array with shape (height, width)
-    :return: Point cloud generated from the RGB-D images
-    
-    Note:
-        - Camera uses pinhole model with resolution 512x512
-        - Horizontal and vertical FOV are 90 degrees
-        - depth_scale = 1000
+    For example:
+        ...
+        args.version == 'open3d':
+            trans = local_icp_algorithm()
+        args.version == 'my_icp':
+            trans = my_local_icp_algorithm()
+        ...
     """
-    fov = np.radians(90)
-    width, height = 512, 512
-    depth_scale = 1000.0
-
-    # Intrinsic parameters
-    focal_length_x = (width / 2) / np.tan(np.radians(fov) / 2)  # fx
-    focal_length_y = (height / 2) / np.tan(np.radians(fov) / 2)  # fy
-    center_x = width / 2  # cx
-    center_y = height / 2  # cy
-
-    # Calculate 3D coordinates
-    u, v = np.meshgrid(np.arange(width), np.arange(height))
-    z = depth_image / depth_scale
-    x = (u - center_x) * z / focal_length_x
-    y = (v - center_y) * z / focal_length_y
-
-    # Filter out points with zero depth
-    mask = z > 0
-    points = np.stack((x, y, z), axis=-1)[mask]
-    colors = (rgb_image / 255.0)[mask]
-
-    # Construct Open3D point cloud
-    point_cloud = o3d.geometry.PointCloud()
-    point_cloud.points = o3d.utility.Vector3dVector(points)
-    point_cloud.colors = o3d.utility.Vector3dVector(colors)
-
-    return point_cloud
-
-
-def preprocess_point_cloud(
-    point_cloud: o3d.geometry.PointCloud, 
-    voxel_size: float
-) -> o3d.geometry.PointCloud:
-    """
-    Downsample point cloud using voxelization.
-    
-    :param point_cloud: Input point cloud to be downsampled
-    :param voxel_size: Size of voxels for downsampling
-    :return: Downsampled point cloud with reduced number of points
-    """
-    downsampled_point_cloud = point_cloud.voxel_down_sample(voxel_size=voxel_size)
-    return downsampled_point_cloud
-
-
-def execute_global_registration(
-    source_downsampled: o3d.geometry.PointCloud, 
-    target_downsampled: o3d.geometry.PointCloud, 
-    source_features: o3d.pipelines.registration.Feature,
-    target_features: o3d.pipelines.registration.Feature, 
-    voxel_size: float
-) -> o3d.pipelines.registration.RegistrationResult:
-    """
-    Perform global registration between two point clouds.
-    
-    :param source_downsampled: Source point cloud (downsampled)
-    :param target_downsampled: Target point cloud (downsampled)
-    :param source_features: FPFH features of source point cloud
-    :param target_features: FPFH features of target point cloud
-    :param voxel_size: Voxel size used for downsampling
-    :return: Registration result containing transformation matrix
-
-    Note: The code is adapted from Open3D documentation
-    (https://www.open3d.org/docs/release/tutorial/pipelines/global_registration.html)
-    """
-    distance_threshold = voxel_size * 1.5
-    mutual_filter = True
-    registration_result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
-        source_downsampled, target_downsampled,
-        source_features, target_features,
-        mutual_filter,
-        distance_threshold,
-        o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
-        4, [
-            o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
-            o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(distance_threshold)
-        ],
-        o3d.pipelines.registration.RANSACConvergenceCriteria(
-            4000000,
-            0.999
-        )
-    )
-
-    return registration_result
-
-
-def local_icp_algorithm(
-    source_downsampled: o3d.geometry.PointCloud, 
-    target_downsampled: o3d.geometry.PointCloud, 
-    initial_transformation: np.ndarray, 
-    distance_threshold: float
-) -> o3d.pipelines.registration.RegistrationResult:
-    """
-    Perform local ICP registration using Open3D library.
-    
-    :param source_downsampled: Source point cloud (downsampled)
-    :param target_downsampled: Target point cloud (downsampled)
-    :param initial_transformation: Initial transformation matrix (4x4)
-    :param distance_threshold: Maximum correspondence distance threshold
-    :return: Registration result containing refined transformation matrix
-    """
-    registration_result = o3d.pipelines.registration.registration_icp(
-        source_downsampled, target_downsampled,
-        distance_threshold,
-        initial_transformation,
-        o3d.pipelines.registration.TransformationEstimationPointToPoint()
-    )
-    return registration_result
-
-
-def my_local_icp_algorithm(
-    source_downsampled: o3d.geometry.PointCloud, 
-    target_downsampled: o3d.geometry.PointCloud, 
-    initial_transformation: np.ndarray, 
-    voxel_size: float
-) -> o3d.pipelines.registration.RegistrationResult:
-    """
-    Perform local ICP registration with custom implementation.
-    
-    :param source_downsampled: Source point cloud (downsampled)
-    :param target_downsampled: Target point cloud (downsampled)
-    :param initial_transformation: Initial transformation matrix (4x4)
-    :param voxel_size: Voxel size for correspondence finding
-    :return: Registration result containing refined transformation matrix
-    
-    Reference:
-        https://cs.gmu.edu/~kosecka/cs685/cs685-icp.pdf
-    """
-    max_iterations = 20
-    threshold = voxel_size * 1.5
-
-    # Initialize transformation
-    source_points = np.asarray(source_downsampled.points)
-    target_points = np.asarray(target_downsampled.points)
-
-    # KDTree for nearest neighbor search
-    target_kd_tree = o3d.geometry.KDTreeFlann(target_downsampled)
-
-    # Initialize transformation matrix
-    transformation = initial_transformation.copy()
-
-    for iteration in range(max_iterations):
-        # Convert source points to homogeneous
-        source_homogeneous = np.hstack((source_points, np.ones((source_points.shape[0], 1))))
-
-        # Apply current transformation
-        source_transformed = (transformation @ source_homogeneous.T).T[:, :3]
-
-        # Find nearest neighbors in target
-        correspondences = []
-        for i, point in enumerate(source_transformed):
-            [_, idx, dist] = target_kd_tree.search_knn_vector_3d(point, 1)
-            if dist[0] < threshold ** 2:
-                # We only consider correspondences within the threshold
-                correspondences.append((i, idx[0]))
-
-        if len(correspondences) < 3:
-            # Not enough correspondences, return identity and set metrics to zero/infinity
-            registration_result = o3d.pipelines.registration.RegistrationResult()
-            registration_result.transformation = transformation
-            registration_result.fitness = 0.0
-            registration_result.inlier_rmse = float('inf')
-            return registration_result
-
-        # Using SVD to find the best transformation
-        source_corresponding = np.array([source_transformed[i] for i, _ in correspondences])
-        target_corresponding = np.array([target_points[j] for _, j in correspondences])
-
-        # Compute centroids
-        source_centroid = np.mean(source_corresponding, axis=0)
-        target_centroid = np.mean(target_corresponding, axis=0)
-
-        # Center the points
-        source_centered = source_corresponding - source_centroid
-        target_centered = target_corresponding - target_centroid
-
-        # Compute covariance matrix
-        covariance_matrix = source_centered.T @ target_centered
-
-        # SVD: decompose the covariance matrix into orthogonal factors
-        left_singular_vectors, singular_values, right_singular_vectors_transposed = np.linalg.svd(covariance_matrix)
-
-        # Compute rotation
-        rotation = right_singular_vectors_transposed.T @ left_singular_vectors.T
-
-        # Ensure a proper rotation (det(R) = 1)
-        if np.linalg.det(rotation) < 0:
-            right_singular_vectors_transposed[2, :] *= -1
-            rotation = right_singular_vectors_transposed.T @ left_singular_vectors.T
-
-        # Compute translation
-        translation = target_centroid - rotation @ source_centroid
-
-        # Update transformation matrix
-        delta_transformation = np.eye(4)
-        delta_transformation[:3, :3] = rotation
-        delta_transformation[:3, 3] = translation
-        transformation = delta_transformation @ transformation
-
-    # Prepare registration result
-    registration_result = o3d.pipelines.registration.RegistrationResult()
-    registration_result.transformation = transformation
-    registration_result.fitness = len(correspondences) / len(source_points)
-    registration_result.inlier_rmse = np.sqrt(np.mean(np.linalg.norm(source_corresponding - target_corresponding, axis=1) ** 2))
-
-    return registration_result
-
-
-def reconstruct(args: argparse.Namespace) -> Tuple[o3d.geometry.PointCloud, np.ndarray]:
-    """
-    Reconstruct 3D scene from RGB-D image sequence.
-    
-    :param args: Command line arguments containing version ('open3d' or 'my_icp') and data_root path
-    :return: Tuple of (reconstructed_point_cloud, predicted_camera_positions)
-    
-    Pipeline:
-        1. Unproject depth images at time t_i and t_{i+1} to point clouds
-        2. Apply voxelization to downsample point clouds
-        3. Apply global registration for initialization
-        4. Apply local registration (ICP) to obtain transformation matrix
-        5. Align point clouds and accumulate transformations along trajectory
-    
-    Example:
-        if args.version == 'open3d':
-            transformation = local_icp_algorithm(...)
-        elif args.version == 'my_icp':
-            transformation = my_local_icp_algorithm(...)
-    """
-    voxel_size = 0.05
-    icp_distance = voxel_size * 0.4
-
-    rgb_paths = sorted(glob.glob(os.path.join(args.data_root, "rgb", "*.png")))
-    depth_paths = sorted(glob.glob(os.path.join(args.data_root, "depth", "*.png")))
-
-    # Camera pose sequence (4x4 matrices)
-    predicted_camera_poses = [np.eye(4)]
-
-    # Create empty accumulated point cloud
-    reconstructed_point_cloud = o3d.geometry.PointCloud()
-
-    # Process all pairs in the sequence
-    for i in range(len(rgb_paths) - 1):
-        # Load current and next rgb/depth images
-        rgb_i = np.asarray(o3d.io.read_image(rgb_paths[i]))
-        depth_i = np.asarray(o3d.io.read_image(depth_paths[i]))
-        rgb_next = np.asarray(o3d.io.read_image(rgb_paths[i + 1]))
-        depth_next = np.asarray(o3d.io.read_image(depth_paths[i + 1]))
-
-        # Unproject to point clouds
-        source_cloud = depth_image_to_point_cloud(rgb_i, depth_i)
-        target_cloud = depth_image_to_point_cloud(rgb_next, depth_next)
-
-        # Downsample for speed
-        source_down = preprocess_point_cloud(source_cloud, voxel_size)
-        target_down = preprocess_point_cloud(target_cloud, voxel_size)
-
-        # Estimate normals (required for FPFH)
-        source_down.estimate_normals(
-            search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=2 * voxel_size, max_nn=30)
-        )
-        target_down.estimate_normals(
-            search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=2 * voxel_size, max_nn=30)
-        )
-
-        # Compute FPFH features
-        source_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
-            source_down, o3d.geometry.KDTreeSearchParamHybrid(radius=5 * voxel_size, max_nn=100)
-        )
-        target_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
-            target_down, o3d.geometry.KDTreeSearchParamHybrid(radius=5 * voxel_size, max_nn=100)
-        )
-
-        # Global registration (RANSAC)
-        global_result = execute_global_registration(
-            source_down, target_down, source_fpfh, target_fpfh, voxel_size
-        )
-
-        # Local registration (ICP, Open3D or your own)
-        if args.version == "open3d":
-            local_result = local_icp_algorithm(
-                source_down, target_down, global_result.transformation, distance_threshold=icp_distance
-            )
-        else:
-            local_result = my_local_icp_algorithm(
-                source_down, target_down, global_result.transformation, voxel_size
-            )
-
-        # Compute new camera pose (accumulate transformation)
-        last_pose = predicted_camera_poses[-1]
-        new_pose = local_result.transformation @ last_pose
-        predicted_camera_poses.append(new_pose)
-
-        # Transform point cloud to world coordinate
-        temp_cloud = o3d.geometry.PointCloud(source_cloud)
-        temp_cloud.transform(last_pose)
-        reconstructed_point_cloud += temp_cloud
-
-        # At last iteration, add the final target_cloud as well
-        if i == len(rgb_paths) - 2:
-            temp_cloud2 = o3d.geometry.PointCloud(target_cloud)
-            temp_cloud2.transform(new_pose)
-            reconstructed_point_cloud += temp_cloud2
-
-    predicted_camera_poses = np.stack(predicted_camera_poses, axis=0)
-    return reconstructed_point_cloud, predicted_camera_poses
+    raise NotImplementedError
+    return result_pcd, pred_cam_pos
 
 
 if __name__ == '__main__':
@@ -341,43 +60,23 @@ if __name__ == '__main__':
     elif args.floor == 2:
         args.data_root = "data_collection/second_floor/"
 
-    # 3D reconstruction and camera pose estimation
-    reconstructed_point_cloud, predicted_camera_poses = reconstruct(args)
+    # TODO: Output result point cloud and estimated camera pose
+    '''
+    Hint: Follow the steps on the spec
+    '''
+    result_pcd, pred_cam_pos = reconstruct()
 
-    # Load ground truth camera positions
-    ground_truth_path = os.path.join(args.data_root, "GT_pose.npy")
-    ground_truth_camera_positions = np.load(ground_truth_path)
-    ground_truth_xyz = ground_truth_camera_positions[:, :3]  # Only xyz part
+    # TODO: Calculate and print L2 distance
+    '''
+    Hint: Mean L2 distance = mean(norm(ground truth - estimated camera trajectory))
+    '''
+    print("Mean L2 distance: ", )
 
-    predicted_xyz = predicted_camera_poses[:, :3, 3]  # Shape (N, 3)
-
-    l2_distances = np.linalg.norm(ground_truth_xyz - predicted_xyz, axis=1)
-    mean_l2_distance = np.mean(l2_distances)
-    print("Mean L2 distance:", mean_l2_distance)
-
-    # Remove ceiling
-    points = np.asarray(reconstructed_point_cloud.points)
-    colors = np.asarray(reconstructed_point_cloud.colors)
-    ceiling_threshold = np.percentile(points[:, 2], 99)
-    mask = points[:, 2] < ceiling_threshold
-    reconstructed_point_cloud.points = o3d.utility.Vector3dVector(points[mask])
-    reconstructed_point_cloud.colors = o3d.utility.Vector3dVector(colors[mask])
-
-    # Create estimated and ground truth trajectory lines
-    estimated_line = o3d.geometry.LineSet()
-    estimated_line.points = o3d.utility.Vector3dVector(predicted_xyz)
-    estimated_line.lines = o3d.utility.Vector2iVector([[i, i+1] for i in range(len(predicted_xyz)-1)])
-    estimated_line.colors = o3d.utility.Vector3dVector([[1, 0, 0] for _ in range(len(predicted_xyz)-1)])  # Red
-
-    ground_truth_line = o3d.geometry.LineSet()
-    ground_truth_line.points = o3d.utility.Vector3dVector(ground_truth_xyz)
-    ground_truth_line.lines = o3d.utility.Vector2iVector([[i, i+1] for i in range(len(ground_truth_xyz)-1)])
-    ground_truth_line.colors = o3d.utility.Vector3dVector([[0, 0, 0] for _ in range(len(ground_truth_xyz)-1)])  # Black
-
-    # Visualize the result
-    visualization_geometries = [
-        reconstructed_point_cloud,
-        estimated_line,
-        ground_truth_line,
-    ]
-    o3d.visualization.draw_geometries(visualization_geometries)
+    # TODO: Visualize result
+    '''
+    Hint: Sould visualize
+    1. Reconstructed point cloud
+    2. Red line: estimated camera pose
+    3. Black line: ground truth camera pose
+    '''
+    o3d.visualization.draw_geometries()
