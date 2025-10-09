@@ -61,8 +61,7 @@ def preprocess_point_cloud(
     :param voxel_size: Size of voxels for downsampling
     :return: Downsampled point cloud with reduced number of points
     """
-    # TODO: Do voxelization to reduce the number of points for less memory usage and speedup
-    raise NotImplementedError
+    downsampled_point_cloud = point_cloud.voxel_down_sample(voxel_size=voxel_size)
     return downsampled_point_cloud
 
 
