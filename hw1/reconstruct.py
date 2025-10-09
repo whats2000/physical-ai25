@@ -1,4 +1,6 @@
 import argparse
+import glob
+import os
 from typing import Tuple
 
 import numpy as np
@@ -245,9 +247,83 @@ def reconstruct(args: argparse.Namespace) -> Tuple[o3d.geometry.PointCloud, np.n
         elif args.version == 'my_icp':
             transformation = my_local_icp_algorithm(...)
     """
-    # TODO: Return results
-    raise NotImplementedError
-    return reconstructed_point_cloud, predicted_camera_positions
+    voxel_size = 0.05
+    icp_distance = voxel_size * 0.4
+
+    rgb_paths = sorted(glob.glob(os.path.join(args.data_root, "rgb", "*.png")))
+    depth_paths = sorted(glob.glob(os.path.join(args.data_root, "depth", "*.png")))
+
+    # Camera pose sequence (4x4 matrices)
+    predicted_camera_poses = [np.eye(4)]
+
+    # Create empty accumulated point cloud
+    reconstructed_point_cloud = o3d.geometry.PointCloud()
+
+    # Process all pairs in the sequence
+    for i in range(len(rgb_paths) - 1):
+        # Load current and next rgb/depth images
+        rgb_i = np.asarray(o3d.io.read_image(rgb_paths[i]))
+        depth_i = np.asarray(o3d.io.read_image(depth_paths[i]))
+        rgb_next = np.asarray(o3d.io.read_image(rgb_paths[i + 1]))
+        depth_next = np.asarray(o3d.io.read_image(depth_paths[i + 1]))
+
+        # Unproject to point clouds
+        source_cloud = depth_image_to_point_cloud(rgb_i, depth_i)
+        target_cloud = depth_image_to_point_cloud(rgb_next, depth_next)
+
+        # Downsample for speed
+        source_down = preprocess_point_cloud(source_cloud, voxel_size)
+        target_down = preprocess_point_cloud(target_cloud, voxel_size)
+
+        # Estimate normals (required for FPFH)
+        source_down.estimate_normals(
+            search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=2 * voxel_size, max_nn=30)
+        )
+        target_down.estimate_normals(
+            search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=2 * voxel_size, max_nn=30)
+        )
+
+        # Compute FPFH features
+        source_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
+            source_down, o3d.geometry.KDTreeSearchParamHybrid(radius=5 * voxel_size, max_nn=100)
+        )
+        target_fpfh = o3d.pipelines.registration.compute_fpfh_feature(
+            target_down, o3d.geometry.KDTreeSearchParamHybrid(radius=5 * voxel_size, max_nn=100)
+        )
+
+        # Global registration (RANSAC)
+        global_result = execute_global_registration(
+            source_down, target_down, source_fpfh, target_fpfh, voxel_size
+        )
+
+        # Local registration (ICP, Open3D or your own)
+        if args.version == "open3d":
+            local_result = local_icp_algorithm(
+                source_down, target_down, global_result.transformation, distance_threshold=icp_distance
+            )
+        else:
+            local_result = my_local_icp_algorithm(
+                source_down, target_down, global_result.transformation, voxel_size
+            )
+
+        # Compute new camera pose (accumulate transformation)
+        last_pose = predicted_camera_poses[-1]
+        new_pose = local_result.transformation @ last_pose
+        predicted_camera_poses.append(new_pose)
+
+        # Transform point cloud to world coordinate
+        temp_cloud = o3d.geometry.PointCloud(source_cloud)
+        temp_cloud.transform(last_pose)
+        reconstructed_point_cloud += temp_cloud
+
+        # At last iteration, add the final target_cloud as well
+        if i == len(rgb_paths) - 2:
+            temp_cloud2 = o3d.geometry.PointCloud(target_cloud)
+            temp_cloud2.transform(new_pose)
+            reconstructed_point_cloud += temp_cloud2
+
+    predicted_camera_poses = np.stack(predicted_camera_poses, axis=0)
+    return reconstructed_point_cloud, predicted_camera_poses
 
 
 if __name__ == '__main__':
