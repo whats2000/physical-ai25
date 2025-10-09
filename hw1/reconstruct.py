@@ -179,9 +179,12 @@ def my_local_icp_algorithm(
                 correspondences.append((i, idx[0]))
 
         if len(correspondences) < 3:
-            # Not enough correspondences to compute a reliable transformation
-            print("Not enough correspondences.")
-            break
+            # Not enough correspondences, return identity and set metrics to zero/infinity
+            registration_result = o3d.pipelines.registration.RegistrationResult()
+            registration_result.transformation = transformation
+            registration_result.fitness = 0.0
+            registration_result.inlier_rmse = float('inf')
+            return registration_result
 
         # Using SVD to find the best transformation
         source_corresponding = np.array([source_transformed[i] for i, _ in correspondences])
@@ -337,35 +340,44 @@ if __name__ == '__main__':
         args.data_root = "data_collection/first_floor/"
     elif args.floor == 2:
         args.data_root = "data_collection/second_floor/"
-    
-    # TODO: Output result point cloud and estimated camera pose
-    """
-    Hint: Follow the steps on the spec
-    """
-    reconstructed_point_cloud, predicted_camera_positions = reconstruct(args)
 
-    # TODO: Calculate and print L2 distance
-    """
-    Hint: Mean L2 distance = mean(norm(ground truth - estimated camera trajectory))
-    
-    Steps:
-        1. Load ground truth camera positions from data
-        2. Compute L2 distance: ||ground_truth_position - predicted_position||_2 for each frame
-        3. Calculate mean of all L2 distances
-    """
-    ground_truth_camera_positions = None  # TODO: Load ground truth
-    mean_l2_distance = None  # TODO: Calculate mean L2 distance
-    print("Mean L2 distance: ", mean_l2_distance)
+    # 3D reconstruction and camera pose estimation
+    reconstructed_point_cloud, predicted_camera_poses = reconstruct(args)
 
-    # TODO: Visualize result
-    """
-    Visualization requirements:
-        1. Reconstructed point cloud (remove ceiling for better view)
-        2. Red line: estimated camera trajectory
-        3. Black line: ground truth camera trajectory
-    
-    Note: Transform trajectories and 3D scene to same coordinate system
-          (be aware of coordinate direction and scale)
-    """
-    visualization_geometries = []  # TODO: Add geometries to visualize
+    # Load ground truth camera positions
+    ground_truth_path = os.path.join(args.data_root, "GT_pose.npy")
+    ground_truth_camera_positions = np.load(ground_truth_path)
+    ground_truth_xyz = ground_truth_camera_positions[:, :3]  # Only xyz part
+
+    predicted_xyz = predicted_camera_poses[:, :3, 3]  # Shape (N, 3)
+
+    l2_distances = np.linalg.norm(ground_truth_xyz - predicted_xyz, axis=1)
+    mean_l2_distance = np.mean(l2_distances)
+    print("Mean L2 distance:", mean_l2_distance)
+
+    # Remove ceiling
+    points = np.asarray(reconstructed_point_cloud.points)
+    colors = np.asarray(reconstructed_point_cloud.colors)
+    ceiling_threshold = np.percentile(points[:, 2], 99)
+    mask = points[:, 2] < ceiling_threshold
+    reconstructed_point_cloud.points = o3d.utility.Vector3dVector(points[mask])
+    reconstructed_point_cloud.colors = o3d.utility.Vector3dVector(colors[mask])
+
+    # Create estimated and ground truth trajectory lines
+    estimated_line = o3d.geometry.LineSet()
+    estimated_line.points = o3d.utility.Vector3dVector(predicted_xyz)
+    estimated_line.lines = o3d.utility.Vector2iVector([[i, i+1] for i in range(len(predicted_xyz)-1)])
+    estimated_line.colors = o3d.utility.Vector3dVector([[1, 0, 0] for _ in range(len(predicted_xyz)-1)])  # Red
+
+    ground_truth_line = o3d.geometry.LineSet()
+    ground_truth_line.points = o3d.utility.Vector3dVector(ground_truth_xyz)
+    ground_truth_line.lines = o3d.utility.Vector2iVector([[i, i+1] for i in range(len(ground_truth_xyz)-1)])
+    ground_truth_line.colors = o3d.utility.Vector3dVector([[0, 0, 0] for _ in range(len(ground_truth_xyz)-1)])  # Black
+
+    # Visualize the result
+    visualization_geometries = [
+        reconstructed_point_cloud,
+        estimated_line,
+        ground_truth_line,
+    ]
     o3d.visualization.draw_geometries(visualization_geometries)
