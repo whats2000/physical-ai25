@@ -81,9 +81,28 @@ def execute_global_registration(
     :param target_features: FPFH features of target point cloud
     :param voxel_size: Voxel size used for downsampling
     :return: Registration result containing transformation matrix
+
+    Note: The code is adapted from Open3D documentation
+    (https://www.open3d.org/docs/release/tutorial/pipelines/global_registration.html)
     """
-    # TODO: Apply global registration as initialization for local methods
-    raise NotImplementedError
+    distance_threshold = voxel_size * 1.5
+    mutual_filter = True
+    registration_result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
+        source_downsampled, target_downsampled,
+        source_features, target_features,
+        mutual_filter,
+        distance_threshold,
+        o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
+        4, [
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
+            o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(distance_threshold)
+        ],
+        o3d.pipelines.registration.RANSACConvergenceCriteria(
+            4000000,
+            0.999
+        )
+    )
+
     return registration_result
 
 
