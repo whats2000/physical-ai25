@@ -121,8 +121,12 @@ def local_icp_algorithm(
     :param distance_threshold: Maximum correspondence distance threshold
     :return: Registration result containing refined transformation matrix
     """
-    # TODO: Use Open3D ICP function to implement (point-to-point or point-to-plane)
-    raise NotImplementedError
+    registration_result = o3d.pipelines.registration.registration_icp(
+        source_downsampled, target_downsampled,
+        distance_threshold,
+        initial_transformation,
+        o3d.pipelines.registration.TransformationEstimationPointToPoint()
+    )
     return registration_result
 
 
@@ -144,8 +148,80 @@ def my_local_icp_algorithm(
     Reference:
         https://cs.gmu.edu/~kosecka/cs685/cs685-icp.pdf
     """
-    # TODO: Write your own ICP function
-    raise NotImplementedError
+    max_iterations = 20
+    threshold = voxel_size * 1.5
+
+    # Initialize transformation
+    source_points = np.asarray(source_downsampled.points)
+    target_points = np.asarray(target_downsampled.points)
+
+    # KDTree for nearest neighbor search
+    target_kd_tree = o3d.geometry.KDTreeFlann(target_downsampled)
+
+    # Initialize transformation matrix
+    transformation = initial_transformation.copy()
+
+    for iteration in range(max_iterations):
+        # Convert source points to homogeneous
+        source_homogeneous = np.hstack((source_points, np.ones((source_points.shape[0], 1))))
+
+        # Apply current transformation
+        source_transformed = (transformation @ source_homogeneous.T).T[:, :3]
+
+        # Find nearest neighbors in target
+        correspondences = []
+        for i, point in enumerate(source_transformed):
+            [_, idx, dist] = target_kd_tree.search_knn_vector_3d(point, 1)
+            if dist[0] < threshold ** 2:
+                # We only consider correspondences within the threshold
+                correspondences.append((i, idx[0]))
+
+        if len(correspondences) < 3:
+            # Not enough correspondences to compute a reliable transformation
+            print("Not enough correspondences.")
+            break
+
+        # Using SVD to find the best transformation
+        source_corresponding = np.array([source_transformed[i] for i, _ in correspondences])
+        target_corresponding = np.array([target_points[j] for _, j in correspondences])
+
+        # Compute centroids
+        source_centroid = np.mean(source_corresponding, axis=0)
+        target_centroid = np.mean(target_corresponding, axis=0)
+
+        # Center the points
+        source_centered = source_corresponding - source_centroid
+        target_centered = target_corresponding - target_centroid
+
+        # Compute covariance matrix
+        covariance_matrix = source_centered.T @ target_centered
+
+        # SVD: decompose the covariance matrix into orthogonal factors
+        left_singular_vectors, singular_values, right_singular_vectors_transposed = np.linalg.svd(covariance_matrix)
+
+        # Compute rotation
+        rotation = right_singular_vectors_transposed.T @ left_singular_vectors.T
+
+        # Ensure a proper rotation (det(R) = 1)
+        if np.linalg.det(rotation) < 0:
+            right_singular_vectors_transposed[2, :] *= -1
+            rotation = right_singular_vectors_transposed.T @ left_singular_vectors.T
+
+        # Compute translation
+        translation = target_centroid - rotation @ source_centroid
+
+        # Update transformation matrix
+        delta_transformation = np.eye(4)
+        delta_transformation[:3, :3] = rotation
+        delta_transformation[:3, 3] = translation
+        transformation = delta_transformation @ transformation
+
+    # Prepare registration result
+    registration_result = o3d.pipelines.registration.RegistrationResult()
+    registration_result.transformation = transformation
+    registration_result.fitness = len(correspondences) / len(source_points)
+    registration_result.inlier_rmse = np.sqrt(np.mean(np.linalg.norm(source_corresponding - target_corresponding, axis=1) ** 2))
+
     return registration_result
 
 
