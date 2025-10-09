@@ -21,8 +21,32 @@ def depth_image_to_point_cloud(
         - Horizontal and vertical FOV are 90 degrees
         - depth_scale = 1000
     """
-    # TODO: Get point cloud from rgb and depth image 
-    raise NotImplementedError
+    fov = np.radians(90)
+    width, height = 512, 512
+    depth_scale = 1000.0
+
+    # Intrinsic parameters
+    focal_length_x = (width / 2) / np.tan(np.radians(fov) / 2)  # fx
+    focal_length_y = (height / 2) / np.tan(np.radians(fov) / 2)  # fy
+    center_x = width / 2  # cx
+    center_y = height / 2  # cy
+
+    # Calculate 3D coordinates
+    u, v = np.meshgrid(np.arange(width), np.arange(height))
+    z = depth_image / depth_scale
+    x = (u - center_x) * z / focal_length_x
+    y = (v - center_y) * z / focal_length_y
+
+    # Filter out points with zero depth
+    mask = z > 0
+    points = np.stack((x, y, z), axis=-1)[mask]
+    colors = (rgb_image / 255.0)[mask]
+
+    # Construct Open3D point cloud
+    point_cloud = o3d.geometry.PointCloud()
+    point_cloud.points = o3d.utility.Vector3dVector(points)
+    point_cloud.colors = o3d.utility.Vector3dVector(colors)
+
     return point_cloud
 
 
