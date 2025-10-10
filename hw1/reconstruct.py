@@ -16,33 +16,33 @@ def depth_image_to_point_cloud(rgb: np.ndarray, depth: np.ndarray) -> o3d.geomet
     focal_length = width / (2 * np.tan(np.radians(90) / 2))
     cx, cy = width / 2, height / 2
     depth_scale = 1000.0
-    
+
     # Create meshgrid for pixel coordinates
     u, v = np.meshgrid(np.arange(width), np.arange(height))
-    
+
     # Convert depth to meters
     z = depth.astype(np.float32) / depth_scale
-    
+
     # Transform u, v back to 3D camera coordinate system
     x = (u - cx) * z / focal_length
     y = (v - cy) * z / focal_length
-    
+
     # Filter out invalid depth
     valid = (z > 0) & (z < 10.0)
-    
+
     # Stack coordinates
     points = np.stack([x[valid], y[valid], z[valid]], axis=-1)
     colors = rgb[valid].astype(np.float32) / 255.0
-    
+
     # Create point cloud
     point_cloud = o3d.geometry.PointCloud()
     point_cloud.points = o3d.utility.Vector3dVector(points)
     point_cloud.colors = o3d.utility.Vector3dVector(colors)
-    
+
     return point_cloud
 
 
-def preprocess_point_cloud(pcd: o3d.geometry.PointCloud, voxel_size: float=0.005) -> o3d.geometry.PointCloud:
+def preprocess_point_cloud(pcd: o3d.geometry.PointCloud, voxel_size: float = 0.005) -> o3d.geometry.PointCloud:
     """
     Down-sample the point cloud using voxel down-sampling
     :param pcd: Input point cloud
@@ -84,6 +84,7 @@ def preprocess_point_cloud(pcd: o3d.geometry.PointCloud, voxel_size: float=0.005
         downsampled_points_cloud.colors = o3d.utility.Vector3dVector(downsampled_colors)
 
     return downsampled_points_cloud
+
 
 def estimate_rigid_transformation(
     source_points: np.ndarray,
@@ -129,7 +130,7 @@ def execute_global_registration(
     target_down: o3d.geometry.PointCloud,
     source_fpfh: o3d.pipelines.registration.Feature,
     target_fpfh: o3d.pipelines.registration.Feature,
-    voxel_size: float=0.005,
+    voxel_size: float = 0.005,
 ):
     """
     Perform global registration between two down-sampled point clouds
@@ -192,15 +193,76 @@ def execute_global_registration(
     return result
 
 
-def local_icp_algorithm(source_down, target_down, trans_init, threshold):
-    # TODO: Use Open3D ICP function to implement
-    raise NotImplementedError
+def local_icp_algorithm(
+    source_down: o3d.geometry.PointCloud,
+    target_down: o3d.geometry.PointCloud,
+    trans_init: np.ndarray,
+    threshold: float
+) -> o3d.pipelines.registration.RegistrationResult:
+    """
+    Run ICP registration using Open3D built-in implementation.
+    :param source_down: Source point cloud
+    :param target_down: Target point cloud
+    :param trans_init: Initial transformation (from global registration)
+    :param threshold: Max correspondence distance
+    :return: RegistrationResult object
+    """
+    result = o3d.pipelines.registration.registration_icp(
+        source_down, target_down, threshold, trans_init,
+        o3d.pipelines.registration.TransformationEstimationPointToPlane()
+    )
     return result
 
 
-def my_local_icp_algorithm(source_down, target_down, trans_init, voxel_size):
-    # TODO: Write your own ICP function
-    raise NotImplementedError
+def my_local_icp_algorithm(
+    source_down: o3d.geometry.PointCloud,
+    target_down: o3d.geometry.PointCloud,
+    trans_init: np.ndarray,
+    voxel_size: float
+) -> o3d.pipelines.registration.RegistrationResult:
+    """
+    Implement your own ICP algorithm here.
+    :param source_down: Source point cloud
+    :param target_down: Target point cloud
+    :param trans_init: Initial transformation (from global registration)
+    :param voxel_size: Voxel size used for down-sampling
+    :return: RegistrationResult object
+    """
+    # ICP parameters
+    max_iterations = 20
+    threshold = voxel_size * 1.5
+    source_points = np.asarray(source_down.points)
+    target_points = np.asarray(target_down.points)
+    transform = np.copy(trans_init)
+
+    # Initialize mask for valid points
+    valid_mask = np.ones(len(source_points), dtype=bool)
+
+    # ICP iterations
+    for _ in range(max_iterations):
+        # Transform source
+        transformed = (transform[:3, :3] @ source_points.T).T + transform[:3, 3]
+
+        # Find the closest target point for each source
+        diff = transformed[:, None, :] - target_points[None, :, :]
+        distance = np.sum(diff ** 2, axis=2)
+        closest_idx = np.argmin(distance, axis=1)
+
+        # Keep only close matches
+        valid_mask = np.sqrt(distance[np.arange(len(source_points)), closest_idx]) < threshold
+        src_valid = transformed[valid_mask]
+        tgt_valid = target_points[closest_idx[valid_mask]]
+
+        # Estimate new transformation
+        delta = estimate_rigid_transformation(src_valid, tgt_valid)
+        transform = delta @ transform
+
+    # Build result
+    result = o3d.pipelines.registration.RegistrationResult()
+    result.transformation = transform
+    result.fitness = np.mean(valid_mask)
+    result.inlier_rmse = threshold
+    
     return result
 
 
@@ -234,7 +296,7 @@ if __name__ == '__main__':
     '''
     Hint: Follow the steps on the spec
     '''
-    result_pcd, pred_cam_pos = reconstruct()
+    result_pcd, pred_cam_pos = reconstruct(args)
 
     # TODO: Calculate and print L2 distance
     '''
