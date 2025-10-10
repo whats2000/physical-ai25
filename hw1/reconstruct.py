@@ -42,10 +42,41 @@ def depth_image_to_point_cloud(rgb: np.ndarray, depth: np.ndarray) -> o3d.geomet
     return point_cloud
 
 
-def preprocess_point_cloud(pcd, voxel_size):
-    # TODO: Do voxelization to reduce the number of points for less memory usage and speedup
-    raise NotImplementedError
-    return pcd_down
+def preprocess_point_cloud(pcd: o3d.geometry.PointCloud, voxel_size: float=0.0015) -> o3d.geometry.PointCloud:
+    """
+    Down-sample the point cloud using voxel down-sampling
+    :param pcd: Input point cloud
+    :param voxel_size: Voxel size for down-sampling
+    :return: Down-sampled point cloud
+    """
+    if voxel_size <= 0:
+        # When the voxel size is non-positive, return the original point cloud
+        print("[Warning] Voxel size should be positive. Returning original point cloud.")
+        return pcd
+
+    # Convert to numpy array (Nx3)
+    cloud_point_np = np.asarray(pcd.points)
+
+    # Compute voxel indices for each point
+    voxel_indices = np.floor(cloud_point_np / voxel_size).astype(np.int32)
+
+    # Find unique voxel indices and their corresponding point indices
+    _, unique_indices = np.unique(voxel_indices, axis=0, return_index=True)
+
+    # Select the first point in each voxel
+    downsampled_points = cloud_point_np[unique_indices]
+
+    # Build the down-sampled point cloud
+    downsampled_points_cloud = o3d.geometry.PointCloud()
+    downsampled_points_cloud.points = o3d.utility.Vector3dVector(downsampled_points)
+
+    # Down-sample colors
+    if pcd.has_colors():
+        cloud_color_np = np.asarray(pcd.colors)
+        downsampled_colors = cloud_color_np[unique_indices]
+        downsampled_points_cloud.colors = o3d.utility.Vector3dVector(downsampled_colors)
+
+    return downsampled_points_cloud
 
 
 def execute_global_registration(source_down, target_down, source_fpfh,
