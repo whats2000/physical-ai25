@@ -290,6 +290,74 @@ def convert_habitat_to_open3d(gt_pose: np.ndarray) -> np.ndarray:
     return converted
 
 
+def project_to_planar_transformation(
+    transformation: np.ndarray,
+    max_xy_step: float = 0.6,
+    max_yaw_degree: float = 40.0) -> np.ndarray:
+    """
+    Project a 4x4 rigid transformation into planar motion:
+    - keep only yaw rotation (remove roll and pitch)
+    - remove vertical translation (y = 0)
+    - limit maximum translation and yaw per step
+    :param transformation: 4x4 transformation matrix
+    :param max_xy_step: maximum XY translation allowed per frame
+    :param max_yaw_degree: maximum yaw rotation (in degrees) allowed per frame
+    :return: 4x4 planar transformation matrix
+    """
+    transformation = transformation.astype(np.float32)
+    rotation = transformation[:3, :3]
+    translation = transformation[:3, 3].copy()
+
+    # extract yaw angle (around Y axis)
+    yaw_angle = np.arctan2(rotation[0, 2], rotation[2, 2])
+
+    # clamp yaw
+    max_yaw = np.deg2rad(max_yaw_degree)
+    yaw_angle = float(np.clip(yaw_angle, -max_yaw, max_yaw))
+
+    cos_yaw = np.cos(yaw_angle)
+    sin_yaw = np.sin(yaw_angle)
+    rotation_yaw = np.array([
+        [cos_yaw, 0.0, sin_yaw],
+        [0.0, 1.0, 0.0],
+        [-sin_yaw, 0.0, cos_yaw]
+    ], dtype=np.float32)
+
+    # zero out vertical movement
+    translation[1] = 0.0
+
+    # limit XY translation step
+    xy_translation = translation[[0, 2]]
+    xy_distance = float(np.linalg.norm(xy_translation))
+    if xy_distance > max_xy_step and xy_distance > 0:
+        xy_translation *= (max_xy_step / xy_distance)
+        translation[0], translation[2] = xy_translation[0], xy_translation[1]
+
+    planar_transformation = np.eye(4, dtype=np.float32)
+    planar_transformation[:3, :3] = rotation_yaw
+    planar_transformation[:3, 3] = translation
+
+    return planar_transformation
+
+
+def is_transformation_plausible(
+    transformation: np.ndarray,
+    max_xy_step: float = 0.6,
+    max_yaw_degree: float = 40.0) -> bool:
+    """
+    Check whether a transformation represents a plausible camera motion.
+    :param transformation: 4x4 transformation matrix
+    :param max_xy_step: maximum XY translation allowed
+    :param max_yaw_degree: maximum yaw rotation allowed (in degrees)
+    :return: True if motion is within limits
+    """
+    translation = transformation[:3, 3]
+    xy_distance = float(np.linalg.norm(translation[[0, 2]]))
+    yaw_angle = np.arctan2(transformation[0, 2], transformation[2, 2])
+    yaw_degree = abs(np.rad2deg(yaw_angle))
+    return (xy_distance <= max_xy_step) and (yaw_degree <= max_yaw_degree)
+
+
 def reconstruct(args: argparse.Namespace):
     """
     The main reconstruction function.
@@ -305,7 +373,7 @@ def reconstruct(args: argparse.Namespace):
     # Get sorted lists of RGB and depth images
     rgb_files = sorted(glob.glob(os.path.join(args.data_root, 'rgb', '*.png')))
     depth_files = sorted(glob.glob(os.path.join(args.data_root, 'depth', '*.png')))
-    voxel_size = 0.125  # Voxel size for down-sampling
+    voxel_size = 0.15  # Voxel size for down-sampling
 
     # Initialize variables
     result_pcd = o3d.geometry.PointCloud()
@@ -333,20 +401,31 @@ def reconstruct(args: argparse.Namespace):
         # Step 1: Global registration (gives coarse alignment)
         global_result = execute_global_registration(pcd_curr_down, pcd_prev_down, fpfh_curr, fpfh_prev, voxel_size)
 
+        # Enforce planar motion for the coarse alignment
+        global_transformation = project_to_planar_transformation(global_result.transformation)
+
         # Step 2: Local refinement (ICP)
         if args.version == 'open3d':
             local_result = local_icp_algorithm(
                 pcd_curr_down, pcd_prev_down,
-                global_result.transformation, voxel_size * 1.5
+                global_transformation, voxel_size * 1.5
             )
         else:
             local_result = my_local_icp_algorithm(
                 pcd_curr_down, pcd_prev_down,
-                global_result.transformation, voxel_size
+                global_transformation, voxel_size
             )
 
+        # Enforce planar motion after ICP
+        local_transformation = project_to_planar_transformation(local_result.transformation)
+
+        # Reject unrealistic or noisy frame
+        if not is_transformation_plausible(local_transformation):
+            print(f"[Warning] Skipping frame {i}: implausible motion")
+            continue
+
         # Accumulate transformation (current to world)
-        current_transform = current_transform @ np.linalg.inv(local_result.transformation)
+        current_transform = current_transform @ local_transformation
         pred_cam_pos.append(current_transform.copy())
 
         # Merge current frame into the global map
@@ -375,6 +454,13 @@ if __name__ == '__main__':
     # Evaluate result
     pred_positions = np.array([pose[:3, 3] for pose in pred_cam_pos])
     ground_truth_positions = ground_truth[:, :3]
+
+    # Align the lengths
+    min_length = min(len(pred_positions), len(ground_truth_positions))
+    pred_positions = pred_positions[:min_length]
+    ground_truth_positions = ground_truth_positions[:min_length]
+
+    # Compute mean L2 error
     distances = np.linalg.norm(pred_positions - ground_truth_positions, axis=1)
     mean_l2 = np.mean(distances)
     print(f"\nMean L2 distance: {mean_l2:.6f}")
