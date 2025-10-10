@@ -1,7 +1,10 @@
 import argparse
+import glob
+import os
 
 import numpy as np
 import open3d as o3d
+from tqdm import tqdm
 
 
 def depth_image_to_point_cloud(rgb: np.ndarray, depth: np.ndarray) -> o3d.geometry.PointCloud:
@@ -262,22 +265,93 @@ def my_local_icp_algorithm(
     result.transformation = transform
     result.fitness = np.mean(valid_mask)
     result.inlier_rmse = threshold
-    
+
     return result
 
 
-def reconstruct(args):
+def compute_fpfh(pcd: o3d.geometry.PointCloud, voxel_size: float) -> o3d.pipelines.registration.Feature:
     """
-    For example:
-        ...
-        args.version == 'open3d':
-            trans = local_icp_algorithm()
-        args.version == 'my_icp':
-            trans = my_local_icp_algorithm()
-        ...
+    Compute FPFH feature for a point cloud.
+    :param pcd: Input point cloud
+    :param voxel_size: Voxel size used for down-sampling
+    :return: FPFH feature
     """
-    raise NotImplementedError
-    return result_pcd, pred_cam_pos
+    radius_normal = voxel_size * 2
+    radius_feature = voxel_size * 5
+
+    pcd.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30))
+    fpfh = o3d.pipelines.registration.compute_fpfh_feature(
+        pcd,
+        o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn=100)
+    )
+    return fpfh
+
+
+def reconstruct(args: argparse.Namespace):
+    """
+    The main reconstruction function.
+    :param args: Command line arguments
+        - args.version: 'open3d' or 'my_icp' to choose ICP implementation
+        - args.data_root: path to the dataset
+    :return: Reconstructed point cloud and estimated camera poses
+    """
+    # Load ground truth poses (shape: Nx7 [x, y, z, qw, qx, qy, qz])
+    ground_truth = np.load(os.path.join(args.data_root, 'GT_pose.npy'))
+
+    # Get sorted lists of RGB and depth images
+    rgb_files = sorted(glob.glob(os.path.join(args.data_root, 'rgb', '*.png')))
+    depth_files = sorted(glob.glob(os.path.join(args.data_root, 'depth', '*.png')))
+    voxel_size = 0.005
+
+    # Initialize variables
+    result_pcd = o3d.geometry.PointCloud()
+    pred_cam_pos = [np.eye(4)]
+    current_transform = np.eye(4)
+
+    # Iterate through all consecutive frames
+    for i in tqdm(range(1, len(rgb_files)), desc="Reconstructing"):
+        # Load RGB-D pair
+        rgb_prev = o3d.io.read_image(rgb_files[i - 1])
+        depth_prev = o3d.io.read_image(depth_files[i - 1])
+        rgb_curr = o3d.io.read_image(rgb_files[i])
+        depth_curr = o3d.io.read_image(depth_files[i])
+
+        # Convert to point clouds
+        pcd_prev = depth_image_to_point_cloud(np.asarray(rgb_prev), np.asarray(depth_prev))
+        pcd_curr = depth_image_to_point_cloud(np.asarray(rgb_curr), np.asarray(depth_curr))
+
+        # Downsample and compute features
+        pcd_prev_down = preprocess_point_cloud(pcd_prev, voxel_size)
+        pcd_curr_down = preprocess_point_cloud(pcd_curr, voxel_size)
+        fpfh_prev = compute_fpfh(pcd_prev_down, voxel_size)
+        fpfh_curr = compute_fpfh(pcd_curr_down, voxel_size)
+
+        # Step 1: Global registration (gives coarse alignment)
+        global_result = execute_global_registration(pcd_curr_down, pcd_prev_down, fpfh_curr, fpfh_prev, voxel_size)
+
+        # Step 2: Local refinement (ICP)
+        if args.version == 'open3d':
+            local_result = local_icp_algorithm(
+                pcd_curr_down, pcd_prev_down,
+                global_result.transformation, voxel_size * 1.5
+            )
+        else:
+            local_result = my_local_icp_algorithm(
+                pcd_curr_down, pcd_prev_down,
+                global_result.transformation, voxel_size
+            )
+
+        # Accumulate transformation (current to world)
+        current_transform = current_transform @ np.linalg.inv(local_result.transformation)
+        pred_cam_pos.append(current_transform.copy())
+
+        # Merge current frame into the global map
+        pcd_curr_down.transform(current_transform)
+        result_pcd += pcd_curr_down
+
+    # Convert to numpy for trajectory
+    pred_cam_pos = np.array(pred_cam_pos)
+    return result_pcd, pred_cam_pos, ground_truth
 
 
 if __name__ == '__main__':
@@ -292,23 +366,34 @@ if __name__ == '__main__':
     elif args.floor == 2:
         args.data_root = "data_collection/second_floor/"
 
-    # TODO: Output result point cloud and estimated camera pose
-    '''
-    Hint: Follow the steps on the spec
-    '''
-    result_pcd, pred_cam_pos = reconstruct(args)
+    result_pcd, pred_cam_pos, ground_truth = reconstruct(args)
 
-    # TODO: Calculate and print L2 distance
-    '''
-    Hint: Mean L2 distance = mean(norm(ground truth - estimated camera trajectory))
-    '''
-    print("Mean L2 distance: ", )
+    # Evaluate result
+    pred_positions = np.array([pose[:3, 3] for pose in pred_cam_pos])
+    ground_truth_positions = ground_truth[:, :3]
+    distances = np.linalg.norm(pred_positions - ground_truth_positions, axis=1)
+    mean_l2 = np.mean(distances)
+    print(f"\nMean L2 distance: {mean_l2:.6f}")
 
-    # TODO: Visualize result
-    '''
-    Hint: Sould visualize
-    1. Reconstructed point cloud
-    2. Red line: estimated camera pose
-    3. Black line: ground truth camera pose
-    '''
-    o3d.visualization.draw_geometries()
+    # Visualize final result
+    lines = [[i, i + 1] for i in range(len(pred_cam_pos) - 1)]
+
+    # Estimated trajectory (red)
+    estimated_points = [pose[:3, 3] for pose in pred_cam_pos]
+    estimated_line_set = o3d.geometry.LineSet()
+    estimated_line_set.points = o3d.utility.Vector3dVector(estimated_points)
+    estimated_line_set.lines = o3d.utility.Vector2iVector(lines)
+    estimated_line_set.colors = o3d.utility.Vector3dVector([[1, 0, 0] for _ in lines])
+
+    # Ground truth trajectory (black)
+    ground_truth_points = ground_truth[:, :3]
+    ground_truth_line_set = o3d.geometry.LineSet()
+    ground_truth_line_set.points = o3d.utility.Vector3dVector(ground_truth_points)
+    ground_truth_line_set.lines = o3d.utility.Vector2iVector(lines)
+    ground_truth_line_set.colors = o3d.utility.Vector3dVector([[0, 0, 0] for _ in lines])
+
+    # Visualize together
+    o3d.visualization.draw_geometries(
+        [result_pcd, estimated_line_set, ground_truth_line_set],
+        window_name="Reconstruction Result"
+    )
