@@ -4,6 +4,7 @@ import os
 
 import numpy as np
 import open3d as o3d
+from scipy.spatial import cKDTree
 from tqdm import tqdm
 
 
@@ -30,7 +31,7 @@ def depth_image_to_point_cloud(rgb: np.ndarray, depth: np.ndarray) -> o3d.geomet
     y = (v - cy) * z / focal_length
 
     # Filter out invalid depth
-    valid = (z > 0) & (z < 10.0)
+    valid = (z > 0) & np.isfinite(z)
 
     # Stack coordinates
     points = np.stack([x[valid], y[valid], z[valid]], axis=-1)
@@ -150,35 +151,26 @@ def execute_global_registration(
     source_feature = np.asarray(source_fpfh.data).T
     target_feature = np.asarray(target_fpfh.data).T
 
-    # Match FPFH features (find nearest neighbor in target for each source)
-    diff = source_feature[:, None, :] - target_feature[None, :, :]
-    distance = np.sum(diff ** 2, axis=2)
-    match_indices = np.argmin(distance, axis=1)
+    # Build KD-tree for feature matching
+    kdtree = cKDTree(target_feature)
+    _, match_indices = kdtree.query(source_feature, k=1)
     matched_target_points = target_points[match_indices]
 
     # Initialize RANSAC parameters
-    num_iterations = 2000
-    distance_threshold = voxel_size * 1.5
+    num_iterations = 500
+    distance_threshold = voxel_size * 2.0
     best_inlier_count = 0
     best_transform = np.eye(4)
 
     # RANSAC iterations
     for _ in range(num_iterations):
-        # Randomly sample 3 unique points for minimal transform estimation
-        indices = np.random.choice(len(source_points), 3, replace=False)
-        source_sample = source_points[indices]
-        target_sample = matched_target_points[indices]
+        idx = np.random.choice(len(source_points), 3, replace=False)
+        src_sample = source_points[idx]
+        tgt_sample = matched_target_points[idx]
+        transform = estimate_rigid_transformation(src_sample, tgt_sample)
 
-        # Estimate rigid transform using SVD
-        transform = estimate_rigid_transformation(source_sample, target_sample)
-
-        # Apply transformation to all source points
-        transformed_source = (transform[:3, :3] @ source_points.T).T + transform[:3, 3]
-
-        # Compute Euclidean distances to matched target points
-        diff = np.linalg.norm(transformed_source - matched_target_points, axis=1)
-
-        # Count inliers (points within distance threshold)
+        transformed = (transform[:3, :3] @ source_points.T).T + transform[:3, 3]
+        diff = np.linalg.norm(transformed - matched_target_points, axis=1)
         inlier_count = np.sum(diff < distance_threshold)
 
         # Keep the best transformation
@@ -211,7 +203,7 @@ def local_icp_algorithm(
     """
     result = o3d.pipelines.registration.registration_icp(
         source_down, target_down, threshold, trans_init,
-        o3d.pipelines.registration.TransformationEstimationPointToPlane()
+        o3d.pipelines.registration.TransformationEstimationPointToPoint()
     )
     return result
 
@@ -231,8 +223,8 @@ def my_local_icp_algorithm(
     :return: RegistrationResult object
     """
     # ICP parameters
-    max_iterations = 20
-    threshold = voxel_size * 1.5
+    max_iterations = 10
+    threshold = voxel_size * 2.0
     source_points = np.asarray(source_down.points)
     target_points = np.asarray(target_down.points)
     transform = np.copy(trans_init)
@@ -313,7 +305,7 @@ def reconstruct(args: argparse.Namespace):
     # Get sorted lists of RGB and depth images
     rgb_files = sorted(glob.glob(os.path.join(args.data_root, 'rgb', '*.png')))
     depth_files = sorted(glob.glob(os.path.join(args.data_root, 'depth', '*.png')))
-    voxel_size = 0.2
+    voxel_size = 0.125  # Voxel size for down-sampling
 
     # Initialize variables
     result_pcd = o3d.geometry.PointCloud()
@@ -354,7 +346,7 @@ def reconstruct(args: argparse.Namespace):
             )
 
         # Accumulate transformation (current to world)
-        current_transform = current_transform @ local_result.transformation
+        current_transform = current_transform @ np.linalg.inv(local_result.transformation)
         pred_cam_pos.append(current_transform.copy())
 
         # Merge current frame into the global map
