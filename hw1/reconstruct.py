@@ -6,6 +6,7 @@ import os
 import numpy as np
 import open3d as o3d
 from scipy.spatial import cKDTree
+import scipy.spatial.transform as tf
 from tqdm import tqdm
 
 
@@ -46,38 +47,45 @@ def depth_image_to_point_cloud(rgb: np.ndarray, depth: np.ndarray) -> o3d.geomet
     return point_cloud
 
 
-def remove_ceiling_points(pcd: o3d.geometry.PointCloud, ceiling_height_threshold: float = None) -> o3d.geometry.PointCloud:
+def remove_ceiling_points(
+    pcd: o3d.geometry.PointCloud,
+    ceiling_height_threshold: float,
+    ground_truth: np.ndarray,
+) -> o3d.geometry.PointCloud:
     """
-    Remove ceiling points from the point cloud based on height threshold.
+    Remove ceiling points from the point cloud based on height threshold or GT up-direction.
     :param pcd: Input point cloud
-    :param ceiling_height_threshold: Y-value threshold. Points above this are removed. If None, no filtering.
+    :param ceiling_height_threshold: Y-value threshold. Points above this are removed.
+    :param ground_truth: Nx7 GT poses [x, y, z, qw, qx, qy, qz] used to determine up-axis direction.
     :return: Filtered point cloud without ceiling points
     """
-    if ceiling_height_threshold is None:
-        print("\nSkipping ceiling removal (threshold=None)")
+    if len(pcd.points) == 0:
         return pcd
-    
+
     points = np.asarray(pcd.points)
     colors = np.asarray(pcd.colors) if pcd.has_colors() else None
-    
-    if len(points) == 0:
-        return pcd
-    
-    # Get Y-axis statistics
-    y_values = points[:, 1]
-    
-    # Remove points above the threshold
-    # Ceiling is at high Y values (Y axis points up)
-    mask = y_values < ceiling_height_threshold
-    
+
+    up_direction = -1.0  # Default: -Y up
+    if ground_truth is not None and len(ground_truth) > 0:
+        rotations = tf.Rotation.from_quat(ground_truth[:, [4, 5, 6, 3]])  # [x, y, z, w]
+        up_vectors = rotations.apply(np.array([0.0, 1.0, 0.0]))
+        mean_up = np.mean(up_vectors, axis=0)
+
+        # Flip because we invert the camera poses to get world-to-camera
+        up_direction = -np.sign(mean_up[1])
+
+    if up_direction > 0:
+        # Ceiling is at high Y values
+        mask = points[:, 1] < ceiling_height_threshold
+    else:
+        # Ceiling is at low Y values
+        mask = points[:, 1] > ceiling_height_threshold
+
     filtered_pcd = o3d.geometry.PointCloud()
     filtered_pcd.points = o3d.utility.Vector3dVector(points[mask])
     if colors is not None:
         filtered_pcd.colors = o3d.utility.Vector3dVector(colors[mask])
-    
-    removed_count = np.sum(~mask)
-    kept_count = np.sum(mask)
-    
+
     return filtered_pcd
 
 
@@ -379,16 +387,16 @@ def _gather_rgb_depth(data_root: str):
     """
     Gather and sort RGB and depth image file paths from the dataset directory.
     """
-    rgb_paths  = glob.glob(os.path.join(data_root, 'rgb', '*.png'))
-    depth_paths= glob.glob(os.path.join(data_root, 'depth', '*.png'))
+    rgb_paths = glob.glob(os.path.join(data_root, 'rgb', '*.png'))
+    depth_paths = glob.glob(os.path.join(data_root, 'depth', '*.png'))
 
     # index by numeric frame id
-    rgb_by_id   = {int(os.path.splitext(os.path.basename(p))[0]): p for p in rgb_paths}
+    rgb_by_id = {int(os.path.splitext(os.path.basename(p))[0]): p for p in rgb_paths}
     depth_by_id = {int(os.path.splitext(os.path.basename(p))[0]): p for p in depth_paths}
 
     # keep only frames present in both folders, sorted numerically
     ids = sorted(set(rgb_by_id) & set(depth_by_id))
-    rgb_sorted   = [rgb_by_id[i]   for i in ids]
+    rgb_sorted = [rgb_by_id[i] for i in ids]
     depth_sorted = [depth_by_id[i] for i in ids]
 
     # optional sanity print
@@ -571,7 +579,7 @@ if __name__ == '__main__':
         aligned_result_pcd += local_cloud
 
     # Remove ceiling points before visualization
-    aligned_result_pcd = remove_ceiling_points(aligned_result_pcd, ceiling_height_threshold=0.5)
+    aligned_result_pcd = remove_ceiling_points(aligned_result_pcd, ceiling_height_threshold=0.2, ground_truth=ground_truth)
 
     # Visualize the trajectory
     lines = [[i, i + 1] for i in range(min_length - 1)]
