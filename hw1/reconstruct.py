@@ -393,6 +393,26 @@ def is_transformation_plausible(
     return (xy_distance <= max_xy_step) and (yaw_degree <= max_yaw_degree)
 
 
+def _gather_rgb_depth(data_root: str):
+    """
+    Gather and sort RGB and depth image file paths from the dataset directory.
+    """
+    rgb_paths  = glob.glob(os.path.join(data_root, 'rgb', '*.png'))
+    depth_paths= glob.glob(os.path.join(data_root, 'depth', '*.png'))
+
+    # index by numeric frame id
+    rgb_by_id   = {int(os.path.splitext(os.path.basename(p))[0]): p for p in rgb_paths}
+    depth_by_id = {int(os.path.splitext(os.path.basename(p))[0]): p for p in depth_paths}
+
+    # keep only frames present in both folders, sorted numerically
+    ids = sorted(set(rgb_by_id) & set(depth_by_id))
+    rgb_sorted   = [rgb_by_id[i]   for i in ids]
+    depth_sorted = [depth_by_id[i] for i in ids]
+
+    # optional sanity print
+    return rgb_sorted, depth_sorted
+
+
 def reconstruct(args: argparse.Namespace):
     """
     The main reconstruction function.
@@ -406,8 +426,7 @@ def reconstruct(args: argparse.Namespace):
     ground_truth = convert_habitat_to_open3d(ground_truth)
 
     # Get sorted lists of RGB and depth images
-    rgb_files = sorted(glob.glob(os.path.join(args.data_root, 'rgb', '*.png')))
-    depth_files = sorted(glob.glob(os.path.join(args.data_root, 'depth', '*.png')))
+    rgb_files, depth_files = _gather_rgb_depth(args.data_root)
     voxel_size = 0.2 if args.version == 'my_icp' else 0.075  # Larger voxel size for my_icp to reduce memory usage
 
     # Initialize variables
