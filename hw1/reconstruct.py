@@ -56,24 +56,31 @@ def preprocess_point_cloud(pcd: o3d.geometry.PointCloud, voxel_size: float=0.001
 
     # Convert to numpy array (Nx3)
     cloud_point_np = np.asarray(pcd.points)
+    has_color = pcd.has_colors()
 
     # Compute voxel indices for each point
     voxel_indices = np.floor(cloud_point_np / voxel_size).astype(np.int32)
 
-    # Find unique voxel indices and their corresponding point indices
-    _, unique_indices = np.unique(voxel_indices, axis=0, return_index=True)
+    # Group points by voxel index
+    unique_voxels, inverse, counts = np.unique(
+        voxel_indices, axis=0, return_inverse=True, return_counts=True
+    )
 
-    # Select the first point in each voxel
-    downsampled_points = cloud_point_np[unique_indices]
+    # Compute mean point position per voxel
+    downsampled_points = np.zeros((len(unique_voxels), 3), dtype=np.float32)
+    np.add.at(downsampled_points, inverse, cloud_point_np)
+    downsampled_points /= counts[:, None]
 
     # Build the down-sampled point cloud
     downsampled_points_cloud = o3d.geometry.PointCloud()
     downsampled_points_cloud.points = o3d.utility.Vector3dVector(downsampled_points)
 
-    # Down-sample colors
-    if pcd.has_colors():
+    # Down-sample colors (if available)
+    if has_color:
         cloud_color_np = np.asarray(pcd.colors)
-        downsampled_colors = cloud_color_np[unique_indices]
+        downsampled_colors = np.zeros((len(unique_voxels), 3), dtype=np.float32)
+        np.add.at(downsampled_colors, inverse, cloud_color_np)
+        downsampled_colors /= counts[:, None]
         downsampled_points_cloud.colors = o3d.utility.Vector3dVector(downsampled_colors)
 
     return downsampled_points_cloud
