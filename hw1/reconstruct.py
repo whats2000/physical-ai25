@@ -375,24 +375,6 @@ def project_to_planar_transformation(
     return planar_transformation
 
 
-def is_transformation_plausible(
-    transformation: np.ndarray,
-    max_xy_step: float = 0.6,
-    max_yaw_degree: float = 40.0) -> bool:
-    """
-    Check whether a transformation represents a plausible camera motion.
-    :param transformation: 4x4 transformation matrix
-    :param max_xy_step: maximum XY translation allowed
-    :param max_yaw_degree: maximum yaw rotation allowed (in degrees)
-    :return: True if motion is within limits
-    """
-    translation = transformation[:3, 3]
-    xy_distance = float(np.linalg.norm(translation[[0, 2]]))
-    yaw_angle = np.arctan2(transformation[0, 2], transformation[2, 2])
-    yaw_degree = abs(np.rad2deg(yaw_angle))
-    return (xy_distance <= max_xy_step) and (yaw_degree <= max_yaw_degree)
-
-
 def _gather_rgb_depth(data_root: str):
     """
     Gather and sort RGB and depth image file paths from the dataset directory.
@@ -480,11 +462,6 @@ def reconstruct(args: argparse.Namespace):
 
         # Enforce planar motion on the forward step (yaw-only + XY translation)
         transform_prev_to_curr_planar = project_to_planar_transformation(transform_prev_to_curr)
-
-        # Plausibility check on the forward step
-        if not is_transformation_plausible(transform_prev_to_curr_planar):
-            print(f"[Warning] Skipping frame {i}: implausible motion")
-            continue
 
         transform_curr_to_prev_planar = np.linalg.inv(transform_prev_to_curr_planar)
         current_transform = current_transform @ transform_curr_to_prev_planar
