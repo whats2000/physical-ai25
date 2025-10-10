@@ -286,6 +286,18 @@ def compute_fpfh(pcd: o3d.geometry.PointCloud, voxel_size: float) -> o3d.pipelin
     return fpfh
 
 
+def convert_habitat_to_open3d(gt_pose: np.ndarray) -> np.ndarray:
+    """
+    Convert Habitat camera poses to Open3D coordinate convention.
+    Habitat uses +X right, +Y up, +Z backward.
+    Open3D expects +Z forward, +Y up.
+    """
+    converted = gt_pose.copy()
+    converted[:, 1] *= -1  # flip Y
+    converted[:, 2] *= -1  # flip Z
+    return converted
+
+
 def reconstruct(args: argparse.Namespace):
     """
     The main reconstruction function.
@@ -296,6 +308,7 @@ def reconstruct(args: argparse.Namespace):
     """
     # Load ground truth poses (shape: Nx7 [x, y, z, qw, qx, qy, qz])
     ground_truth = np.load(os.path.join(args.data_root, 'GT_pose.npy'))
+    ground_truth = convert_habitat_to_open3d(ground_truth)
 
     # Get sorted lists of RGB and depth images
     rgb_files = sorted(glob.glob(os.path.join(args.data_root, 'rgb', '*.png')))
@@ -341,7 +354,7 @@ def reconstruct(args: argparse.Namespace):
             )
 
         # Accumulate transformation (current to world)
-        current_transform = current_transform @ np.linalg.inv(local_result.transformation)
+        current_transform = current_transform @ local_result.transformation
         pred_cam_pos.append(current_transform.copy())
 
         # Merge current frame into the global map
