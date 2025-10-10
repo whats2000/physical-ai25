@@ -42,7 +42,7 @@ def depth_image_to_point_cloud(rgb: np.ndarray, depth: np.ndarray) -> o3d.geomet
     return point_cloud
 
 
-def preprocess_point_cloud(pcd: o3d.geometry.PointCloud, voxel_size: float=0.0015) -> o3d.geometry.PointCloud:
+def preprocess_point_cloud(pcd: o3d.geometry.PointCloud, voxel_size: float=0.005) -> o3d.geometry.PointCloud:
     """
     Down-sample the point cloud using voxel down-sampling
     :param pcd: Input point cloud
@@ -85,10 +85,110 @@ def preprocess_point_cloud(pcd: o3d.geometry.PointCloud, voxel_size: float=0.001
 
     return downsampled_points_cloud
 
+def estimate_rigid_transformation(
+    source_points: np.ndarray,
+    target_points: np.ndarray
+) -> np.ndarray:
+    """
+    Estimate rigid transformation aligning source_points to target_points using SVD.
+    :param source_points: Nx3 array of source points
+    :param target_points: Nx3 array of target points
+    :return: 4x4 homogeneous transformation matrix
+    """
+    # Compute centroids of both point sets
+    source_center = np.mean(source_points, axis=0)
+    target_center = np.mean(target_points, axis=0)
 
-def execute_global_registration(source_down, target_down, source_fpfh,
-                                target_fpfh, voxel_size):
-    raise NotImplementedError
+    # Subtract centroids to center the points
+    source_centered = source_points - source_center
+    target_centered = target_points - target_center
+
+    # Compute rotation using Singular Value Decomposition (SVD)
+    correlation_matrix = source_centered.T @ target_centered
+    u_matrix, _, v_transpose = np.linalg.svd(correlation_matrix)
+    rotation_matrix = v_transpose.T @ u_matrix.T
+
+    # Handle reflection case
+    if np.linalg.det(rotation_matrix) < 0:
+        v_transpose[2, :] *= -1
+        rotation_matrix = v_transpose.T @ u_matrix.T
+
+    # Compute translation vector
+    translation_vector = target_center - rotation_matrix @ source_center
+
+    # Assemble full 4x4 transformation matrix
+    transformation_matrix = np.eye(4, dtype=np.float32)
+    transformation_matrix[:3, :3] = rotation_matrix
+    transformation_matrix[:3, 3] = translation_vector
+
+    return transformation_matrix
+
+
+def execute_global_registration(
+    source_down: o3d.geometry.PointCloud,
+    target_down: o3d.geometry.PointCloud,
+    source_fpfh: o3d.pipelines.registration.Feature,
+    target_fpfh: o3d.pipelines.registration.Feature,
+    voxel_size: float=0.005,
+):
+    """
+    Perform global registration between two down-sampled point clouds
+    using RANSAC based on FPFH features.
+    :param source_down: Down-sampled source point cloud
+    :param target_down: Down-sampled target point cloud
+    :param source_fpfh: FPFH feature of source point cloud
+    :param target_fpfh: FPFH feature of target point cloud
+    :param voxel_size: The voxel size used for down-sampling
+    :return: RegistrationResult object containing the transformation
+    """
+    # Convert Open3D data to numpy arrays
+    source_points = np.asarray(source_down.points)
+    target_points = np.asarray(target_down.points)
+    source_feature = np.asarray(source_fpfh.data).T
+    target_feature = np.asarray(target_fpfh.data).T
+
+    # Match FPFH features (find nearest neighbor in target for each source)
+    diff = source_feature[:, None, :] - target_feature[None, :, :]
+    distance = np.sum(diff ** 2, axis=2)
+    match_indices = np.argmin(distance, axis=1)
+    matched_target_points = target_points[match_indices]
+
+    # Initialize RANSAC parameters
+    num_iterations = 2000
+    distance_threshold = voxel_size * 1.5
+    best_inlier_count = 0
+    best_transform = np.eye(4)
+
+    # RANSAC iterations
+    for _ in range(num_iterations):
+        # Randomly sample 3 unique points for minimal transform estimation
+        indices = np.random.choice(len(source_points), 3, replace=False)
+        source_sample = source_points[indices]
+        target_sample = matched_target_points[indices]
+
+        # Estimate rigid transform using SVD
+        transform = estimate_rigid_transformation(source_sample, target_sample)
+
+        # Apply transformation to all source points
+        transformed_source = (transform[:3, :3] @ source_points.T).T + transform[:3, 3]
+
+        # Compute Euclidean distances to matched target points
+        diff = np.linalg.norm(transformed_source - matched_target_points, axis=1)
+
+        # Count inliers (points within distance threshold)
+        inlier_count = np.sum(diff < distance_threshold)
+
+        # Keep the best transformation
+        if inlier_count > best_inlier_count:
+            best_inlier_count = inlier_count
+            best_transform = transform
+
+    # Build result object compatible with Open3D
+    result = o3d.pipelines.registration.RegistrationResult()
+    result.transformation = best_transform
+    result.fitness = best_inlier_count / len(source_points)
+    result.inlier_rmse = distance_threshold
+
     return result
 
 
