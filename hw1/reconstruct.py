@@ -11,20 +11,19 @@ def depth_image_to_point_cloud(rgb: np.ndarray, depth: np.ndarray) -> o3d.geomet
     """
     Convert RGB and depth images to point cloud
     :param rgb: HxWx3 RGB image
-    :param depth: HxW depth image in millimeters
+    :param depth: HxW depth image
     :return: Open3D point cloud object
     """
     # Camera intrinsic parameters
     height, width = depth.shape
     focal_length = width / (2 * np.tan(np.radians(90) / 2))
     cx, cy = width / 2, height / 2
-    depth_scale = 1000.0
 
     # Create meshgrid for pixel coordinates
     u, v = np.meshgrid(np.arange(width), np.arange(height))
 
-    # Convert depth to meters
-    z = depth.astype(np.float32) / depth_scale
+    # Convert depth back to meters
+    z = (depth.astype(np.float32) / 255.0) * 10.0
 
     # Transform u, v back to 3D camera coordinate system
     x = (u - cx) * z / focal_length
@@ -301,7 +300,7 @@ def reconstruct(args: argparse.Namespace):
     # Get sorted lists of RGB and depth images
     rgb_files = sorted(glob.glob(os.path.join(args.data_root, 'rgb', '*.png')))
     depth_files = sorted(glob.glob(os.path.join(args.data_root, 'depth', '*.png')))
-    voxel_size = 0.005
+    voxel_size = 0.2
 
     # Initialize variables
     result_pcd = o3d.geometry.PointCloud()

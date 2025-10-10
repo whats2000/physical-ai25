@@ -28,10 +28,13 @@ def test_execute_global_registration():
     point_cloud1 = depth_image_to_point_cloud(rgb_image1, depth_image1)
     point_cloud2 = depth_image_to_point_cloud(rgb_image2, depth_image2)
 
-    # Down-sample
-    voxel_size = 0.005
+    # Down-sample with larger voxel size for testing to reduce memory usage
+    voxel_size = 0.1
     point_cloud1_down = preprocess_point_cloud(point_cloud1, voxel_size)
     point_cloud2_down = preprocess_point_cloud(point_cloud2, voxel_size)
+    
+    print(f"Point cloud 1 size after downsampling: {len(point_cloud1_down.points)}")
+    print(f"Point cloud 2 size after downsampling: {len(point_cloud2_down.points)}")
 
     # Compute FPFH features
     fpfh1 = compute_fpfh(point_cloud1_down, voxel_size)
@@ -42,6 +45,7 @@ def test_execute_global_registration():
 
     # Print and visualize result
     print("Transformation:\n", result.transformation)
+    print(f"Fitness: {result.fitness}")
     o3d.visualization.draw_geometries([point_cloud1_down, point_cloud2_down])
 
 if __name__ == "__main__":
