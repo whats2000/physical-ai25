@@ -46,6 +46,41 @@ def depth_image_to_point_cloud(rgb: np.ndarray, depth: np.ndarray) -> o3d.geomet
     return point_cloud
 
 
+def remove_ceiling_points(pcd: o3d.geometry.PointCloud, ceiling_height_threshold: float = None) -> o3d.geometry.PointCloud:
+    """
+    Remove ceiling points from the point cloud based on height threshold.
+    :param pcd: Input point cloud
+    :param ceiling_height_threshold: Y-value threshold. Points above this are removed. If None, no filtering.
+    :return: Filtered point cloud without ceiling points
+    """
+    if ceiling_height_threshold is None:
+        print("\nSkipping ceiling removal (threshold=None)")
+        return pcd
+    
+    points = np.asarray(pcd.points)
+    colors = np.asarray(pcd.colors) if pcd.has_colors() else None
+    
+    if len(points) == 0:
+        return pcd
+    
+    # Get Y-axis statistics
+    y_values = points[:, 1]
+    
+    # Remove points above the threshold
+    # Ceiling is at high Y values (Y axis points up)
+    mask = y_values < ceiling_height_threshold
+    
+    filtered_pcd = o3d.geometry.PointCloud()
+    filtered_pcd.points = o3d.utility.Vector3dVector(points[mask])
+    if colors is not None:
+        filtered_pcd.colors = o3d.utility.Vector3dVector(colors[mask])
+    
+    removed_count = np.sum(~mask)
+    kept_count = np.sum(mask)
+    
+    return filtered_pcd
+
+
 def preprocess_point_cloud(pcd: o3d.geometry.PointCloud, voxel_size: float = 0.005) -> o3d.geometry.PointCloud:
     """
     Down-sample the point cloud using voxel down-sampling
@@ -373,7 +408,7 @@ def reconstruct(args: argparse.Namespace):
     # Get sorted lists of RGB and depth images
     rgb_files = sorted(glob.glob(os.path.join(args.data_root, 'rgb', '*.png')))
     depth_files = sorted(glob.glob(os.path.join(args.data_root, 'depth', '*.png')))
-    voxel_size = 0.125 if args.version == 'my_icp' else 0.05  # Larger voxel size for my_icp to reduce memory usage
+    voxel_size = 0.2 if args.version == 'my_icp' else 0.075  # Larger voxel size for my_icp to reduce memory usage
 
     # Initialize variables
     result_pcd = o3d.geometry.PointCloud()
@@ -440,7 +475,6 @@ def reconstruct(args: argparse.Namespace):
         kept_frame_indices.append(i)
 
         # Store this frame's local (camera-frame) cloud BEFORE any world transform
-        import copy
         local_frame_pointclouds.append(copy.deepcopy(pcd_curr_down))
 
         # Transform current point cloud to world frame (frame 0 coordinate system)
@@ -539,6 +573,9 @@ if __name__ == '__main__':
         local_cloud.rotate(rotation_matrix, center=(0.0, 0.0, 0.0))
         local_cloud.translate(translation_vector)
         aligned_result_pcd += local_cloud
+
+    # Remove ceiling points before visualization
+    aligned_result_pcd = remove_ceiling_points(aligned_result_pcd, ceiling_height_threshold=0.5)
 
     # Visualize the trajectory
     lines = [[i, i + 1] for i in range(min_length - 1)]
