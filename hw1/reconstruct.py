@@ -1,4 +1,5 @@
 import argparse
+import copy
 import glob
 import os
 
@@ -18,7 +19,7 @@ def depth_image_to_point_cloud(rgb: np.ndarray, depth: np.ndarray) -> o3d.geomet
     # Camera intrinsic parameters
     height, width = depth.shape
     focal_length = width / (2 * np.tan(np.radians(90) / 2))
-    cx, cy = width / 2, height / 2
+    cx, cy = width / 2.0, height / 2.0
 
     # Create meshgrid for pixel coordinates
     u, v = np.meshgrid(np.arange(width), np.arange(height))
@@ -285,7 +286,6 @@ def convert_habitat_to_open3d(gt_pose: np.ndarray) -> np.ndarray:
     Open3D expects +Z forward, +Y up.
     """
     converted = gt_pose.copy()
-    converted[:, 1] *= -1  # flip Y
     converted[:, 2] *= -1  # flip Z
     return converted
 
@@ -364,7 +364,7 @@ def reconstruct(args: argparse.Namespace):
     :param args: Command line arguments
         - args.version: 'open3d' or 'my_icp' to choose ICP implementation
         - args.data_root: path to the dataset
-    :return: Reconstructed point cloud and estimated camera poses
+    :return: Reconstructed point cloud and estimated camera poses and ground truth and kept indices and local frame clouds
     """
     # Load ground truth poses (shape: Nx7 [x, y, z, qw, qx, qy, qz])
     ground_truth = np.load(os.path.join(args.data_root, 'GT_pose.npy'))
@@ -373,14 +373,18 @@ def reconstruct(args: argparse.Namespace):
     # Get sorted lists of RGB and depth images
     rgb_files = sorted(glob.glob(os.path.join(args.data_root, 'rgb', '*.png')))
     depth_files = sorted(glob.glob(os.path.join(args.data_root, 'depth', '*.png')))
-    voxel_size = 0.15  # Voxel size for down-sampling
+    voxel_size = 0.125 if args.version == 'my_icp' else 0.05  # Larger voxel size for my_icp to reduce memory usage
 
     # Initialize variables
     result_pcd = o3d.geometry.PointCloud()
     pred_cam_pos = [np.eye(4)]
     current_transform = np.eye(4)
 
-    # Iterate through all consecutive frames
+    kept_frame_indices = [0]
+
+    # Store local point clouds (downsampled) before world transform
+    local_frame_pointclouds = []
+
     for i in tqdm(range(1, len(rgb_files)), desc="Reconstructing"):
         # Load RGB-D pair
         rgb_prev = o3d.io.read_image(rgb_files[i - 1])
@@ -398,43 +402,59 @@ def reconstruct(args: argparse.Namespace):
         fpfh_prev = compute_fpfh(pcd_prev_down, voxel_size)
         fpfh_curr = compute_fpfh(pcd_curr_down, voxel_size)
 
-        # Step 1: Global registration (gives coarse alignment)
+        # Step 1: Global registration (coarse) gives transform curr -> prev
         global_result = execute_global_registration(pcd_curr_down, pcd_prev_down, fpfh_curr, fpfh_prev, voxel_size)
+        global_transformation_curr_to_prev = global_result.transformation  # curr -> prev
 
-        # Enforce planar motion for the coarse alignment
-        global_transformation = project_to_planar_transformation(global_result.transformation)
-
-        # Step 2: Local refinement (ICP)
+        # Step 2: Local refinement (ICP) also expects curr -> prev
         if args.version == 'open3d':
             local_result = local_icp_algorithm(
                 pcd_curr_down, pcd_prev_down,
-                global_transformation, voxel_size * 1.5
+                global_transformation_curr_to_prev, voxel_size * 1.5
             )
         else:
             local_result = my_local_icp_algorithm(
                 pcd_curr_down, pcd_prev_down,
-                global_transformation, voxel_size
+                global_transformation_curr_to_prev, voxel_size
             )
 
-        # Enforce planar motion after ICP
-        local_transformation = project_to_planar_transformation(local_result.transformation)
+        # Transform from current frame to previous frame
+        transform_curr_to_prev = local_result.transformation  # curr -> prev
 
-        # Reject unrealistic or noisy frame
-        if not is_transformation_plausible(local_transformation):
+        # For plausibility and planar constraints, work with the forward motion (prev -> curr)
+        transform_prev_to_curr = np.linalg.inv(transform_curr_to_prev)  # prev -> curr
+
+        # Enforce planar motion on the forward step (yaw-only + XY translation)
+        transform_prev_to_curr_planar = project_to_planar_transformation(transform_prev_to_curr)
+
+        # Plausibility check on the forward step
+        if not is_transformation_plausible(transform_prev_to_curr_planar):
             print(f"[Warning] Skipping frame {i}: implausible motion")
             continue
 
-        # Accumulate transformation (current to world)
-        current_transform = current_transform @ local_transformation
-        pred_cam_pos.append(current_transform.copy())
+        transform_curr_to_prev_planar = np.linalg.inv(transform_prev_to_curr_planar)
+        current_transform = current_transform @ transform_curr_to_prev_planar
 
-        # Merge current frame into the global map
-        pcd_curr_down.transform(current_transform)
-        result_pcd += pcd_curr_down
+        # Record pose for evaluation / later re-fusion
+        pred_cam_pos.append(current_transform.copy())
+        kept_frame_indices.append(i)
+
+        # Store this frame's local (camera-frame) cloud BEFORE any world transform
+        import copy
+        local_frame_pointclouds.append(copy.deepcopy(pcd_curr_down))
+
+        # Transform current point cloud to world frame (frame 0 coordinate system)
+        pcd_curr_world = copy.deepcopy(pcd_curr_down)
+        pcd_curr_world.transform(current_transform)
+        result_pcd += pcd_curr_world
 
     # Convert to numpy for trajectory
     pred_cam_pos = np.array(pred_cam_pos)
-    return result_pcd, pred_cam_pos, ground_truth
+
+    return result_pcd, pred_cam_pos, ground_truth, np.array(
+        kept_frame_indices,
+        dtype=np.int32
+    ), local_frame_pointclouds, rgb_files, depth_files, voxel_size
 
 
 if __name__ == '__main__':
@@ -449,41 +469,93 @@ if __name__ == '__main__':
     elif args.floor == 2:
         args.data_root = "data_collection/second_floor/"
 
-    result_pcd, pred_cam_pos, ground_truth = reconstruct(args)
+    result_pcd, pred_cam_pos, ground_truth, kept_frame_indices, local_frame_pointclouds, rgb_files, depth_files, voxel_size = reconstruct(
+        args)
 
-    # Evaluate result
+    # Evaluate using only kept frames
     pred_positions = np.array([pose[:3, 3] for pose in pred_cam_pos])
-    ground_truth_positions = ground_truth[:, :3]
+    ground_truth_positions = ground_truth[kept_frame_indices, :3]
+    assert len(pred_positions) == len(ground_truth_positions)
+    min_length = len(pred_positions)
 
-    # Align the lengths
-    min_length = min(len(pred_positions), len(ground_truth_positions))
-    pred_positions = pred_positions[:min_length]
-    ground_truth_positions = ground_truth_positions[:min_length]
 
-    # Compute mean L2 error
-    distances = np.linalg.norm(pred_positions - ground_truth_positions, axis=1)
+    def umeyama_similarity_transform(source_points: np.ndarray, target_points: np.ndarray):
+        """
+        Compute similarity (Sim3) transform that maps source_points to target_points.
+        Includes rotation, translation, and uniform scale.
+        """
+        source_mean = np.mean(source_points, axis=0)
+        target_mean = np.mean(target_points, axis=0)
+        source_centered = source_points - source_mean
+        target_centered = target_points - target_mean
+        covariance_matrix = (source_centered.T @ target_centered) / len(source_points)
+        u_matrix, singular_values, v_transpose = np.linalg.svd(covariance_matrix)
+        scale_matrix = np.eye(3, dtype=np.float32)
+        if np.linalg.det(u_matrix) * np.linalg.det(v_transpose) < 0:
+            scale_matrix[-1, -1] = -1.0
+        rotation_matrix = u_matrix @ scale_matrix @ v_transpose
+        variance_source = np.sum(source_centered ** 2) / len(source_points)
+        scale_factor = np.trace(np.diag(singular_values) @ scale_matrix) / (variance_source + 1e-12)
+        translation_vector = target_mean - scale_factor * (rotation_matrix @ source_mean)
+        return scale_factor, rotation_matrix, translation_vector
+
+
+    scale_factor, rotation_matrix, translation_vector = umeyama_similarity_transform(
+        pred_positions, ground_truth_positions
+    )
+    pred_positions_aligned = (scale_factor * (pred_positions @ rotation_matrix.T)) + translation_vector
+
+    distances = np.linalg.norm(pred_positions_aligned - ground_truth_positions, axis=1)
     mean_l2 = np.mean(distances)
-    print(f"\nMean L2 distance: {mean_l2:.6f}")
+    print(f"Mean L2 distance (aligned): {mean_l2:.6f} m")
 
-    # Visualize final result
-    lines = [[i, i + 1] for i in range(len(pred_cam_pos) - 1)]
+    pred_steps = np.linalg.norm(np.diff(pred_positions, axis=0), axis=1)
+    gt_steps = np.linalg.norm(np.diff(ground_truth_positions, axis=0), axis=1)
 
-    # Estimated trajectory (red)
-    estimated_points = [pose[:3, 3] for pose in pred_cam_pos]
+    # Rebuild the map in the aligned frame
+    aligned_result_pcd = o3d.geometry.PointCloud()
+
+    # Add the initial frame (frame 0) at world origin
+    rgb_first = o3d.io.read_image(rgb_files[0])
+    depth_first = o3d.io.read_image(depth_files[0])
+    pcd_first = depth_image_to_point_cloud(np.asarray(rgb_first), np.asarray(depth_first))
+    pcd_first_down = preprocess_point_cloud(pcd_first, voxel_size)
+
+    # Apply Sim(3) to frame 0 (it's already at identity in pred world)
+    pcd_first_down.scale(scale_factor, center=(0.0, 0.0, 0.0))
+    pcd_first_down.rotate(rotation_matrix, center=(0.0, 0.0, 0.0))
+    pcd_first_down.translate(translation_vector)
+    aligned_result_pcd += pcd_first_down
+
+    # Now add all other frames
+    for k in range(1, len(pred_cam_pos)):
+        local_cloud = copy.deepcopy(local_frame_pointclouds[k - 1])  # camera k cloud (downsampled)
+
+        # 1. bring to pred world (frame 0 coordinate system)
+        local_cloud.transform(pred_cam_pos[k])
+
+        # 2. apply Sim(3) to move pred world → ground truth world
+        local_cloud.scale(scale_factor, center=(0.0, 0.0, 0.0))
+        local_cloud.rotate(rotation_matrix, center=(0.0, 0.0, 0.0))
+        local_cloud.translate(translation_vector)
+        aligned_result_pcd += local_cloud
+
+    # Visualize the trajectory
+    lines = [[i, i + 1] for i in range(min_length - 1)]
+
     estimated_line_set = o3d.geometry.LineSet()
-    estimated_line_set.points = o3d.utility.Vector3dVector(estimated_points)
+    estimated_line_set.points = o3d.utility.Vector3dVector(pred_positions_aligned)
     estimated_line_set.lines = o3d.utility.Vector2iVector(lines)
     estimated_line_set.colors = o3d.utility.Vector3dVector([[1, 0, 0] for _ in lines])
 
     # Ground truth trajectory (black)
-    ground_truth_points = ground_truth[:, :3]
     ground_truth_line_set = o3d.geometry.LineSet()
-    ground_truth_line_set.points = o3d.utility.Vector3dVector(ground_truth_points)
+    ground_truth_line_set.points = o3d.utility.Vector3dVector(ground_truth_positions)
     ground_truth_line_set.lines = o3d.utility.Vector2iVector(lines)
     ground_truth_line_set.colors = o3d.utility.Vector3dVector([[0, 0, 0] for _ in lines])
 
     # Visualize together
     o3d.visualization.draw_geometries(
-        [result_pcd, estimated_line_set, ground_truth_line_set],
-        window_name="Reconstruction Result"
+        [aligned_result_pcd, estimated_line_set, ground_truth_line_set],
+        window_name="Reconstruction Result (Aligned & Refused)"
     )
