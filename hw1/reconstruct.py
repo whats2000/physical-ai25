@@ -56,11 +56,6 @@ def preprocess_point_cloud(
     :param voxel_size: Voxel size for down-sampling
     :return: Down-sampled point cloud
     """
-    if voxel_size <= 0:
-        # When the voxel size is non-positive, return the original point cloud
-        print("[Warning] Voxel size should be positive. Returning original point cloud.")
-        return pcd
-
     # Convert to numpy array (Nx3)
     cloud_point_np = np.asarray(pcd.points)
     has_color = pcd.has_colors()
