@@ -293,7 +293,6 @@ def _gather_rgb_depth(data_root: str):
     rgb_sorted = [rgb_by_id[i] for i in ids]
     depth_sorted = [depth_by_id[i] for i in ids]
 
-    # optional sanity print
     return rgb_sorted, depth_sorted
 
 
