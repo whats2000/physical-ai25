@@ -36,3 +36,37 @@ Open VcXsrv with the following configuration:
    - [x] Disable access control
 3. Optional: Save the configuration file for later use
 4. Now, you may see the X server icon on your taskbar (Taskbar is at the down-right corner of your screen with `^` icon)
+
+## Reproduce the results
+
+1. Collect the simulation data
+
+```bash
+# Activate conda environment
+conda activate habitat
+
+# Collect Floor 1 dataset
+python load.py -f 1
+
+# Collect Floor 2 dataset
+python load.py -f 2
+```
+
+2. Reproduce the results
+
+```bash
+# Activate conda environment
+conda activate habitat
+
+# Reproduce Floor 1 results with manually implemented ICP
+python reconstruct.py
+
+# Reproduce Floor 1 results with Open3D ICP
+python reconstruct.py --version open3d
+
+# Reproduce Floor 2 results with manually implemented ICP
+python reconstruct.py -f 2
+
+# Reproduce Floor 2 results with Open3D ICP
+python reconstruct.py -f 2 --version open3d
+```
