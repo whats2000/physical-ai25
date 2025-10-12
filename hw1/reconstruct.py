@@ -463,76 +463,20 @@ if __name__ == '__main__':
     assert len(pred_positions) == len(ground_truth_positions)
     min_length = len(pred_positions)
 
-
-    def umeyama_similarity_transform(source_points: np.ndarray, target_points: np.ndarray):
-        """
-        Compute similarity (Sim3) transform that maps source_points to target_points.
-        Includes rotation, translation, and uniform scale.
-        """
-        source_mean = np.mean(source_points, axis=0)
-        target_mean = np.mean(target_points, axis=0)
-        source_centered = source_points - source_mean
-        target_centered = target_points - target_mean
-        covariance_matrix = (source_centered.T @ target_centered) / len(source_points)
-        u_matrix, singular_values, v_transpose = np.linalg.svd(covariance_matrix)
-        scale_matrix = np.eye(3, dtype=np.float32)
-        if np.linalg.det(u_matrix) * np.linalg.det(v_transpose) < 0:
-            scale_matrix[-1, -1] = -1.0
-        rotation_matrix = u_matrix @ scale_matrix @ v_transpose
-        variance_source = np.sum(source_centered ** 2) / len(source_points)
-        scale_factor = np.trace(np.diag(singular_values) @ scale_matrix) / (variance_source + 1e-12)
-        translation_vector = target_mean - scale_factor * (rotation_matrix @ source_mean)
-        return scale_factor, rotation_matrix, translation_vector
-
-
-    scale_factor, rotation_matrix, translation_vector = umeyama_similarity_transform(
-        pred_positions, ground_truth_positions
-    )
-    pred_positions_aligned = (scale_factor * (pred_positions @ rotation_matrix.T)) + translation_vector
-
-    distances = np.linalg.norm(pred_positions_aligned - ground_truth_positions, axis=1)
+    # Compute L2 distance without alignment
+    distances = np.linalg.norm(pred_positions - ground_truth_positions, axis=1)
     mean_l2 = np.mean(distances)
-    print(f"Mean L2 distance (aligned): {mean_l2:.6f} m")
-
-    pred_steps = np.linalg.norm(np.diff(pred_positions, axis=0), axis=1)
-    gt_steps = np.linalg.norm(np.diff(ground_truth_positions, axis=0), axis=1)
-
-    # Rebuild the map in the aligned frame
-    aligned_result_pcd = o3d.geometry.PointCloud()
-
-    # Add the initial frame (frame 0) at world origin
-    rgb_first = o3d.io.read_image(rgb_files[0])
-    depth_first = o3d.io.read_image(depth_files[0])
-    pcd_first = depth_image_to_point_cloud(np.asarray(rgb_first), np.asarray(depth_first))
-    pcd_first_down = preprocess_point_cloud(pcd_first, voxel_size)
-
-    # Apply Sim(3) to frame 0 (it's already at identity in pred world)
-    pcd_first_down.scale(scale_factor, center=(0.0, 0.0, 0.0))
-    pcd_first_down.rotate(rotation_matrix, center=(0.0, 0.0, 0.0))
-    pcd_first_down.translate(translation_vector)
-    aligned_result_pcd += pcd_first_down
-
-    # Now add all other frames
-    for k in range(1, len(pred_cam_pos)):
-        local_cloud = copy.deepcopy(local_frame_pointclouds[k - 1])  # camera k cloud (downsampled)
-
-        # 1. bring to pred world (frame 0 coordinate system)
-        local_cloud.transform(pred_cam_pos[k])
-
-        # 2. apply Sim(3) to move pred world → ground truth world
-        local_cloud.scale(scale_factor, center=(0.0, 0.0, 0.0))
-        local_cloud.rotate(rotation_matrix, center=(0.0, 0.0, 0.0))
-        local_cloud.translate(translation_vector)
-        aligned_result_pcd += local_cloud
+    print(f"Mean L2 distance: {mean_l2:.6f} m")
 
     # Remove ceiling points before visualization
-    aligned_result_pcd = remove_ceiling_points(aligned_result_pcd, ceiling_height_threshold=0.2 if args.floor == 1 else 0.4, ground_truth=ground_truth)
+    result_pcd = remove_ceiling_points(result_pcd, ceiling_height_threshold=0.2 if args.floor == 1 else 0.4, ground_truth=ground_truth)
 
     # Visualize the trajectory
     lines = [[i, i + 1] for i in range(min_length - 1)]
 
+    # Estimated trajectory (red)
     estimated_line_set = o3d.geometry.LineSet()
-    estimated_line_set.points = o3d.utility.Vector3dVector(pred_positions_aligned)
+    estimated_line_set.points = o3d.utility.Vector3dVector(pred_positions)
     estimated_line_set.lines = o3d.utility.Vector2iVector(lines)
     estimated_line_set.colors = o3d.utility.Vector3dVector([[1, 0, 0] for _ in lines])
 
@@ -544,6 +488,6 @@ if __name__ == '__main__':
 
     # Visualize together
     o3d.visualization.draw_geometries(
-        [aligned_result_pcd, estimated_line_set, ground_truth_line_set],
-        window_name="Reconstruction Result (Aligned & Refused)"
+        [result_pcd, estimated_line_set, ground_truth_line_set],
+        window_name="Reconstruction Result"
     )
