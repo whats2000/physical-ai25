@@ -432,7 +432,7 @@ def reconstruct(args: argparse.Namespace):
         pred_cam_pos.append(current_transform.copy())
         kept_frame_indices.append(i)
 
-        # Store this frame's local (camera-frame) cloud BEFORE any world transform
+        # Store this frame's local (camera-frame) cloud before any world transform
         local_frame_pointclouds.append(copy.deepcopy(pcd_curr_down))
 
         # Transform current point cloud to world frame (frame 0 coordinate system)
@@ -470,13 +470,17 @@ if __name__ == '__main__':
     assert len(pred_positions) == len(ground_truth_positions)
     min_length = len(pred_positions)
 
-    # Compute L2 distance without alignment
-    distances = np.linalg.norm(pred_positions - ground_truth_positions, axis=1)
+    # Align ground truth trajectory to predicted trajectory
+    offset = pred_positions[0] - ground_truth_positions[0]
+    ground_truth_positions_aligned = ground_truth_positions + offset
+
+    # Compute L2 distance with alignment
+    distances = np.linalg.norm(pred_positions - ground_truth_positions_aligned, axis=1)
     mean_l2 = np.mean(distances)
     print(f"Mean L2 distance: {mean_l2:.6f} m")
 
     # Remove ceiling points before visualization
-    result_pcd = remove_ceiling_points(result_pcd, ceiling_height_threshold=0.2 if args.floor == 1 else 0.4, ground_truth=ground_truth)
+    result_pcd = remove_ceiling_points(result_pcd, ceiling_height_threshold=0.2, ground_truth=ground_truth)
 
     # Visualize the trajectory
     lines = [[i, i + 1] for i in range(min_length - 1)]
@@ -489,7 +493,7 @@ if __name__ == '__main__':
 
     # Ground truth trajectory (black)
     ground_truth_line_set = o3d.geometry.LineSet()
-    ground_truth_line_set.points = o3d.utility.Vector3dVector(ground_truth_positions)
+    ground_truth_line_set.points = o3d.utility.Vector3dVector(ground_truth_positions_aligned)
     ground_truth_line_set.lines = o3d.utility.Vector2iVector(lines)
     ground_truth_line_set.colors = o3d.utility.Vector3dVector([[0, 0, 0] for _ in lines])
 
