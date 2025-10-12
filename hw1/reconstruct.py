@@ -92,7 +92,6 @@ def remove_ceiling_points(
 def preprocess_point_cloud(
     pcd: o3d.geometry.PointCloud, 
     voxel_size: float = 0.005,
-    use_open3d: bool = True,
     ) -> o3d.geometry.PointCloud:
     """
     Down-sample the point cloud using voxel down-sampling
@@ -105,10 +104,6 @@ def preprocess_point_cloud(
         # When the voxel size is non-positive, return the original point cloud
         print("[Warning] Voxel size should be positive. Returning original point cloud.")
         return pcd
-    
-    # If use_open3d is True, use Open3D's built-in voxel downsampling
-    if use_open3d:
-        return pcd.voxel_down_sample(voxel_size)
 
     # Convert to numpy array (Nx3)
     cloud_point_np = np.asarray(pcd.points)
@@ -187,7 +182,6 @@ def execute_global_registration(
     source_fpfh: o3d.pipelines.registration.Feature,
     target_fpfh: o3d.pipelines.registration.Feature,
     voxel_size: float = 0.005,
-    use_open3d: bool = True,
 ):
     """
     Perform global registration between two down-sampled point clouds
@@ -200,23 +194,6 @@ def execute_global_registration(
     :param use_open3d: Whether to use Open3D's built-in RANSAC or custom implementation
     :return: RegistrationResult object containing the transformation
     """
-    # If use_open3d is True, use Open3D's built-in RANSAC
-    if use_open3d:
-        distance_threshold = voxel_size * 1.5
-        result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
-            source_down, target_down, source_fpfh, target_fpfh,
-            mutual_filter=True,
-            max_correspondence_distance=distance_threshold,
-            estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
-            ransac_n=4,
-            checkers=[
-                o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
-                o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(distance_threshold)
-            ],
-            criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(50000, 1000)
-        )
-        return result
-    
     # Convert Open3D data to numpy arrays
     source_points = np.asarray(source_down.points)
     target_points = np.asarray(target_down.points)
