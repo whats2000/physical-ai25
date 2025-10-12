@@ -470,30 +470,35 @@ if __name__ == '__main__':
     assert len(pred_positions) == len(ground_truth_positions)
     min_length = len(pred_positions)
 
-    # Align ground truth trajectory to predicted trajectory
-    offset = pred_positions[0] - ground_truth_positions[0]
-    ground_truth_positions_aligned = ground_truth_positions + offset
+    # Align predicted trajectory to ground truth
+    offset = ground_truth_positions[0] - pred_positions[0]
+    pred_positions_aligned = pred_positions + offset
 
     # Compute L2 distance with alignment
-    distances = np.linalg.norm(pred_positions - ground_truth_positions_aligned, axis=1)
+    distances = np.linalg.norm(pred_positions_aligned - ground_truth_positions, axis=1)
     mean_l2 = np.mean(distances)
     print(f"Mean L2 distance: {mean_l2:.6f} m")
 
+    # Apply the same offset to the point cloud
+    alignment_transform = np.eye(4)
+    alignment_transform[:3, 3] = offset
+    result_pcd.transform(alignment_transform)
+
     # Remove ceiling points before visualization
-    result_pcd = remove_ceiling_points(result_pcd, ceiling_height_threshold=0.2, ground_truth=ground_truth)
+    result_pcd = remove_ceiling_points(result_pcd, ceiling_height_threshold=0.2 if args.floor == 1 else 0.4, ground_truth=ground_truth)
 
     # Visualize the trajectory
     lines = [[i, i + 1] for i in range(min_length - 1)]
 
     # Estimated trajectory (red)
     estimated_line_set = o3d.geometry.LineSet()
-    estimated_line_set.points = o3d.utility.Vector3dVector(pred_positions)
+    estimated_line_set.points = o3d.utility.Vector3dVector(pred_positions_aligned)
     estimated_line_set.lines = o3d.utility.Vector2iVector(lines)
     estimated_line_set.colors = o3d.utility.Vector3dVector([[1, 0, 0] for _ in lines])
 
     # Ground truth trajectory (black)
     ground_truth_line_set = o3d.geometry.LineSet()
-    ground_truth_line_set.points = o3d.utility.Vector3dVector(ground_truth_positions_aligned)
+    ground_truth_line_set.points = o3d.utility.Vector3dVector(ground_truth_positions)
     ground_truth_line_set.lines = o3d.utility.Vector2iVector(lines)
     ground_truth_line_set.colors = o3d.utility.Vector3dVector([[0, 0, 0] for _ in lines])
 
