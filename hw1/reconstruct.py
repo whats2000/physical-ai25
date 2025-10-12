@@ -164,9 +164,9 @@ def execute_global_registration(
     # RANSAC iterations
     for _ in range(num_iterations):
         idx = np.random.choice(len(source_points), 3, replace=False)
-        src_sample = source_points[idx]
-        tgt_sample = matched_target_points[idx]
-        transform = estimate_rigid_transformation(src_sample, tgt_sample)
+        source_sample = source_points[idx]
+        target_sample = matched_target_points[idx]
+        transform = estimate_rigid_transformation(source_sample, target_sample)
 
         transformed = (transform[:3, :3] @ source_points.T).T + transform[:3, 3]
         diff = np.linalg.norm(transformed - matched_target_points, axis=1)
