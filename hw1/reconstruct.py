@@ -163,9 +163,9 @@ def execute_global_registration(
 
     # RANSAC iterations
     for _ in range(num_iterations):
-        idx = np.random.choice(len(source_points), 3, replace=False)
-        source_sample = source_points[idx]
-        target_sample = matched_target_points[idx]
+        sample_indices = np.random.choice(len(source_points), 3, replace=False)
+        source_sample = source_points[sample_indices]
+        target_sample = matched_target_points[sample_indices]
         transform = estimate_rigid_transformation(source_sample, target_sample)
 
         transformed = (transform[:3, :3] @ source_points.T).T + transform[:3, 3]
