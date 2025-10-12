@@ -372,7 +372,12 @@ def reconstruct(args: argparse.Namespace):
 
     # Get sorted lists of RGB and depth images
     rgb_files, depth_files = _gather_rgb_depth(args.data_root)
-    voxel_size = 0.2 if args.version == 'my_icp' else 0.125  # Larger voxel size for my_icp to reduce memory usage
+    if args.floor == 2:
+        # Local ICP on is much efficient than my ICP, so I can use smaller voxel size
+        voxel_size = 0.15 if args.version == 'my_icp' else 0.1
+    else:
+        # Floor 1 mostly need way longer if use smaller voxel size, so I set it larger
+        voxel_size = 0.2 if args.version == 'my_icp' else 0.125
 
     # Initialize variables
     result_pcd = o3d.geometry.PointCloud()
@@ -401,11 +406,11 @@ def reconstruct(args: argparse.Namespace):
         fpfh_prev = compute_fpfh(pcd_prev_down, voxel_size)
         fpfh_curr = compute_fpfh(pcd_curr_down, voxel_size)
 
-        # Step 1: Global registration (coarse) gives transform curr -> prev
+        # Step 1: Global registration (coarse) gives transform Current -> Previous
         global_result = execute_global_registration(pcd_curr_down, pcd_prev_down, fpfh_curr, fpfh_prev, voxel_size)
-        global_transformation_curr_to_prev = global_result.transformation  # curr -> prev
+        global_transformation_curr_to_prev = global_result.transformation  # Current -> Previous
 
-        # Step 2: Local refinement (ICP) also expects curr -> prev
+        # Step 2: Local refinement (ICP) also expects Current -> Previous
         if args.version == 'open3d':
             local_result = local_icp_algorithm(
                 pcd_curr_down, pcd_prev_down,
@@ -418,12 +423,9 @@ def reconstruct(args: argparse.Namespace):
             )
 
         # Transform from current frame to previous frame
-        transform_curr_to_prev = local_result.transformation  # curr -> prev
+        transform_curr_to_prev = local_result.transformation  # Current -> Previous
 
-        # For plausibility and planar constraints, work with the forward motion (prev -> curr)
-        transform_prev_to_curr = np.linalg.inv(transform_curr_to_prev)  # prev -> curr
-
-        transform_curr_to_prev = np.linalg.inv(transform_prev_to_curr)
+        # Update accumulated transformation
         current_transform = current_transform @ transform_curr_to_prev
 
         # Record pose for evaluation / later re-fusion
