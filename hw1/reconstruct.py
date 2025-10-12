@@ -54,7 +54,6 @@ def preprocess_point_cloud(
     Down-sample the point cloud using voxel down-sampling
     :param pcd: Input point cloud
     :param voxel_size: Voxel size for down-sampling
-    :param use_open3d: Whether to use Open3D's built-in voxel downsampling or custom implementation
     :return: Down-sampled point cloud
     """
     if voxel_size <= 0:
@@ -148,7 +147,6 @@ def execute_global_registration(
     :param source_fpfh: FPFH feature of source point cloud
     :param target_fpfh: FPFH feature of target point cloud
     :param voxel_size: The voxel size used for down-sampling
-    :param use_open3d: Whether to use Open3D's built-in RANSAC or custom implementation
     :return: RegistrationResult object containing the transformation
     """
     # Convert Open3D data to numpy arrays
