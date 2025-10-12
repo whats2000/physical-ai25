@@ -267,8 +267,8 @@ def my_local_icp_algorithm(
     :return: RegistrationResult object
     """
     # ICP parameters
-    max_iterations = 10
-    threshold = voxel_size * 2.0
+    max_iterations = 8
+    threshold = voxel_size
     source_points = np.asarray(source_down.points)
     target_points = np.asarray(target_down.points)
     transform = np.copy(trans_init)
@@ -333,56 +333,6 @@ def convert_habitat_to_open3d(gt_pose: np.ndarray) -> np.ndarray:
     return converted
 
 
-def project_to_planar_transformation(
-    transformation: np.ndarray,
-    max_xy_step: float = 0.6,
-    max_yaw_degree: float = 40.0) -> np.ndarray:
-    """
-    Project a 4x4 rigid transformation into planar motion:
-    - keep only yaw rotation (remove roll and pitch)
-    - remove vertical translation (y = 0)
-    - limit maximum translation and yaw per step
-    :param transformation: 4x4 transformation matrix
-    :param max_xy_step: maximum XY translation allowed per frame
-    :param max_yaw_degree: maximum yaw rotation (in degrees) allowed per frame
-    :return: 4x4 planar transformation matrix
-    """
-    transformation = transformation.astype(np.float32)
-    rotation = transformation[:3, :3]
-    translation = transformation[:3, 3].copy()
-
-    # extract yaw angle (around Y axis)
-    yaw_angle = np.arctan2(rotation[0, 2], rotation[2, 2])
-
-    # clamp yaw
-    max_yaw = np.deg2rad(max_yaw_degree)
-    yaw_angle = float(np.clip(yaw_angle, -max_yaw, max_yaw))
-
-    cos_yaw = np.cos(yaw_angle)
-    sin_yaw = np.sin(yaw_angle)
-    rotation_yaw = np.array([
-        [cos_yaw, 0.0, sin_yaw],
-        [0.0, 1.0, 0.0],
-        [-sin_yaw, 0.0, cos_yaw]
-    ], dtype=np.float32)
-
-    # zero out vertical movement
-    translation[1] = 0.0
-
-    # limit XY translation step
-    xy_translation = translation[[0, 2]]
-    xy_distance = float(np.linalg.norm(xy_translation))
-    if xy_distance > max_xy_step and xy_distance > 0:
-        xy_translation *= (max_xy_step / xy_distance)
-        translation[0], translation[2] = xy_translation[0], xy_translation[1]
-
-    planar_transformation = np.eye(4, dtype=np.float32)
-    planar_transformation[:3, :3] = rotation_yaw
-    planar_transformation[:3, 3] = translation
-
-    return planar_transformation
-
-
 def _gather_rgb_depth(data_root: str):
     """
     Gather and sort RGB and depth image file paths from the dataset directory.
@@ -417,7 +367,7 @@ def reconstruct(args: argparse.Namespace):
 
     # Get sorted lists of RGB and depth images
     rgb_files, depth_files = _gather_rgb_depth(args.data_root)
-    voxel_size = 0.2 if args.version == 'my_icp' else 0.075  # Larger voxel size for my_icp to reduce memory usage
+    voxel_size = 0.2 if args.version == 'my_icp' else 0.125  # Larger voxel size for my_icp to reduce memory usage
 
     # Initialize variables
     result_pcd = o3d.geometry.PointCloud()
@@ -468,11 +418,8 @@ def reconstruct(args: argparse.Namespace):
         # For plausibility and planar constraints, work with the forward motion (prev -> curr)
         transform_prev_to_curr = np.linalg.inv(transform_curr_to_prev)  # prev -> curr
 
-        # Enforce planar motion on the forward step (yaw-only + XY translation)
-        transform_prev_to_curr_planar = project_to_planar_transformation(transform_prev_to_curr)
-
-        transform_curr_to_prev_planar = np.linalg.inv(transform_prev_to_curr_planar)
-        current_transform = current_transform @ transform_curr_to_prev_planar
+        transform_curr_to_prev = np.linalg.inv(transform_prev_to_curr)
+        current_transform = current_transform @ transform_curr_to_prev
 
         # Record pose for evaluation / later re-fusion
         pred_cam_pos.append(current_transform.copy())
@@ -579,7 +526,7 @@ if __name__ == '__main__':
         aligned_result_pcd += local_cloud
 
     # Remove ceiling points before visualization
-    aligned_result_pcd = remove_ceiling_points(aligned_result_pcd, ceiling_height_threshold=0.2, ground_truth=ground_truth)
+    aligned_result_pcd = remove_ceiling_points(aligned_result_pcd, ceiling_height_threshold=0.2 if args.floor == 1 else 0.4, ground_truth=ground_truth)
 
     # Visualize the trajectory
     lines = [[i, i + 1] for i in range(min_length - 1)]

@@ -136,7 +136,7 @@ agent_state = habitat_sim.AgentState()
 if args.floor == 1:
     agent_state.position = np.array([0.0, 0.0, 0.0])  # agent in world space
 elif args.floor == 2:
-    agent_state.position = np.array([0.0, 1.0, -1.0])  # agent in world space
+    agent_state.position = np.array([0.0, 1.0, -0.0])  # agent in world space
 agent.set_state(agent_state)
 
 # obtain the default, discrete actions that an agent can perform
