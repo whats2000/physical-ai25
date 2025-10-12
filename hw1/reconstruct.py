@@ -133,7 +133,7 @@ def execute_global_registration(
     source_fpfh: o3d.pipelines.registration.Feature,
     target_fpfh: o3d.pipelines.registration.Feature,
     voxel_size: float = 0.005,
-):
+) -> o3d.pipelines.registration.RegistrationResult:
     """
     Perform global registration between two down-sampled point clouds
     using RANSAC based on FPFH features.
