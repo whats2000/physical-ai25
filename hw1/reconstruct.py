@@ -6,7 +6,6 @@ import os
 import numpy as np
 import open3d as o3d
 from scipy.spatial import cKDTree
-import scipy.spatial.transform as tf
 from tqdm import tqdm
 
 
@@ -49,14 +48,14 @@ def depth_image_to_point_cloud(rgb: np.ndarray, depth: np.ndarray) -> o3d.geomet
 
 def remove_ceiling_points(
     pcd: o3d.geometry.PointCloud,
-    ceiling_height_threshold: float,
-    ground_truth: np.ndarray,
+    starting_height: float,
+    offset: float,
 ) -> o3d.geometry.PointCloud:
     """
-    Remove ceiling points from the point cloud based on height threshold or GT up-direction.
+    Remove ceiling points from the point cloud based on relative height from starting point.
     :param pcd: Input point cloud
-    :param ceiling_height_threshold: Y-value threshold. Points above this are removed.
-    :param ground_truth: Nx7 GT poses [x, y, z, qw, qx, qy, qz] used to determine up-axis direction.
+    :param starting_height: The Y-coordinate of the starting position (reference height).
+    :param offset: Height offset from starting point. Points higher than (starting_height + offset) are removed.
     :return: Filtered point cloud without ceiling points
     """
     if len(pcd.points) == 0:
@@ -65,21 +64,9 @@ def remove_ceiling_points(
     points = np.asarray(pcd.points)
     colors = np.asarray(pcd.colors) if pcd.has_colors() else None
 
-    up_direction = -1.0  # Default: -Y up
-    if ground_truth is not None and len(ground_truth) > 0:
-        rotations = tf.Rotation.from_quat(ground_truth[:, [4, 5, 6, 3]])  # [x, y, z, w]
-        up_vectors = rotations.apply(np.array([0.0, 1.0, 0.0]))
-        mean_up = np.mean(up_vectors, axis=0)
-
-        # Flip because we invert the camera poses to get world-to-camera
-        up_direction = -np.sign(mean_up[1])
-
-    if up_direction > 0:
-        # Ceiling is at high Y values
-        mask = points[:, 1] < ceiling_height_threshold
-    else:
-        # Ceiling is at low Y values
-        mask = points[:, 1] > ceiling_height_threshold
+    # Remove points higher than starting_height + offset (Ceiling in reverse direction)
+    ceiling_threshold = starting_height - offset
+    mask = points[:, 1] > ceiling_threshold
 
     filtered_pcd = o3d.geometry.PointCloud()
     filtered_pcd.points = o3d.utility.Vector3dVector(points[mask])
@@ -473,7 +460,12 @@ if __name__ == '__main__':
     result_point_cloud.transform(alignment_transform)
 
     # Remove ceiling points before visualization
-    result_point_cloud = remove_ceiling_points(result_point_cloud, ceiling_height_threshold=0.2 if args.floor == 1 else 0.4, ground_truth=ground_truth)
+    starting_height = ground_truth_positions[0, 1]
+    result_point_cloud = remove_ceiling_points(
+        result_point_cloud, 
+        starting_height=starting_height,
+        offset=0.2
+    )
 
     # Visualize the trajectory
     lines = [[i, i + 1] for i in range(min_length - 1)]
