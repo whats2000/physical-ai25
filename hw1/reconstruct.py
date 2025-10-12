@@ -239,15 +239,15 @@ def my_local_icp_algorithm(
         # Find the closest target point for each source
         diff = transformed[:, None, :] - target_points[None, :, :]
         distance = np.sum(diff ** 2, axis=2)
-        closest_idx = np.argmin(distance, axis=1)
+        closest_index = np.argmin(distance, axis=1)
 
         # Keep only close matches
-        valid_mask = np.sqrt(distance[np.arange(len(source_points)), closest_idx]) < threshold
-        src_valid = transformed[valid_mask]
-        tgt_valid = target_points[closest_idx[valid_mask]]
+        valid_mask = np.sqrt(distance[np.arange(len(source_points)), closest_index]) < threshold
+        source_valid = transformed[valid_mask]
+        target_valid = target_points[closest_index[valid_mask]]
 
         # Estimate new transformation
-        delta = estimate_rigid_transformation(src_valid, tgt_valid)
+        delta = estimate_rigid_transformation(source_valid, target_valid)
         transform = delta @ transform
 
     # Build result
