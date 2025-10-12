@@ -89,17 +89,26 @@ def remove_ceiling_points(
     return filtered_pcd
 
 
-def preprocess_point_cloud(pcd: o3d.geometry.PointCloud, voxel_size: float = 0.005) -> o3d.geometry.PointCloud:
+def preprocess_point_cloud(
+    pcd: o3d.geometry.PointCloud, 
+    voxel_size: float = 0.005,
+    use_open3d: bool = True,
+    ) -> o3d.geometry.PointCloud:
     """
     Down-sample the point cloud using voxel down-sampling
     :param pcd: Input point cloud
     :param voxel_size: Voxel size for down-sampling
+    :param use_open3d: Whether to use Open3D's built-in voxel downsampling or custom implementation
     :return: Down-sampled point cloud
     """
     if voxel_size <= 0:
         # When the voxel size is non-positive, return the original point cloud
         print("[Warning] Voxel size should be positive. Returning original point cloud.")
         return pcd
+    
+    # If use_open3d is True, use Open3D's built-in voxel downsampling
+    if use_open3d:
+        return pcd.voxel_down_sample(voxel_size)
 
     # Convert to numpy array (Nx3)
     cloud_point_np = np.asarray(pcd.points)
@@ -178,6 +187,7 @@ def execute_global_registration(
     source_fpfh: o3d.pipelines.registration.Feature,
     target_fpfh: o3d.pipelines.registration.Feature,
     voxel_size: float = 0.005,
+    use_open3d: bool = True,
 ):
     """
     Perform global registration between two down-sampled point clouds
@@ -187,8 +197,26 @@ def execute_global_registration(
     :param source_fpfh: FPFH feature of source point cloud
     :param target_fpfh: FPFH feature of target point cloud
     :param voxel_size: The voxel size used for down-sampling
+    :param use_open3d: Whether to use Open3D's built-in RANSAC or custom implementation
     :return: RegistrationResult object containing the transformation
     """
+    # If use_open3d is True, use Open3D's built-in RANSAC
+    if use_open3d:
+        distance_threshold = voxel_size * 1.5
+        result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
+            source_down, target_down, source_fpfh, target_fpfh,
+            mutual_filter=True,
+            max_correspondence_distance=distance_threshold,
+            estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
+            ransac_n=3,
+            checkers=[
+                o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
+                o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(distance_threshold)
+            ],
+            criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(4000000, 500)
+        )
+        return result
+    
     # Convert Open3D data to numpy arrays
     source_points = np.asarray(source_down.points)
     target_points = np.asarray(target_down.points)
