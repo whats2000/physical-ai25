@@ -364,11 +364,8 @@ def reconstruct(args: argparse.Namespace):
     :param args: Command line arguments
         - args.version: 'open3d' or 'my_icp' to choose ICP implementation
         - args.data_root: path to the dataset
-    :return: Reconstructed point cloud and estimated camera poses and ground truth and kept indices and local frame clouds
+    :return: Reconstructed point cloud and estimated camera poses
     """
-    # Load ground truth poses (shape: Nx7 [x, y, z, qw, qx, qy, qz])
-    ground_truth = np.load(os.path.join(args.data_root, 'GT_pose.npy'))
-    ground_truth = convert_habitat_to_open3d(ground_truth)
 
     # Get sorted lists of RGB and depth images
     rgb_files, depth_files = _gather_rgb_depth(args.data_root)
@@ -383,11 +380,6 @@ def reconstruct(args: argparse.Namespace):
     result_pcd = o3d.geometry.PointCloud()
     pred_cam_pos = [np.eye(4)]
     current_transform = np.eye(4)
-
-    kept_frame_indices = [0]
-
-    # Store local point clouds (downsampled) before world transform
-    local_frame_pointclouds = []
 
     for i in tqdm(range(1, len(rgb_files)), desc="Reconstructing"):
         # Load RGB-D pair
@@ -430,10 +422,6 @@ def reconstruct(args: argparse.Namespace):
 
         # Record pose for evaluation / later re-fusion
         pred_cam_pos.append(current_transform.copy())
-        kept_frame_indices.append(i)
-
-        # Store this frame's local (camera-frame) cloud before any world transform
-        local_frame_pointclouds.append(copy.deepcopy(pcd_curr_down))
 
         # Transform current point cloud to world frame (frame 0 coordinate system)
         pcd_curr_world = copy.deepcopy(pcd_curr_down)
@@ -443,10 +431,7 @@ def reconstruct(args: argparse.Namespace):
     # Convert to numpy for trajectory
     pred_cam_pos = np.array(pred_cam_pos)
 
-    return result_pcd, pred_cam_pos, ground_truth, np.array(
-        kept_frame_indices,
-        dtype=np.int32
-    ), local_frame_pointclouds, rgb_files, depth_files, voxel_size
+    return result_pcd, pred_cam_pos
 
 
 if __name__ == '__main__':
@@ -461,12 +446,15 @@ if __name__ == '__main__':
     elif args.floor == 2:
         args.data_root = "data_collection/second_floor/"
 
-    result_pcd, pred_cam_pos, ground_truth, kept_frame_indices, local_frame_pointclouds, rgb_files, depth_files, voxel_size = reconstruct(
-        args)
+    result_point_cloud, predict_camera_position = reconstruct(args)
 
-    # Evaluate using only kept frames
-    pred_positions = np.array([pose[:3, 3] for pose in pred_cam_pos])
-    ground_truth_positions = ground_truth[kept_frame_indices, :3]
+    # Load ground truth poses (shape: Nx7 [x, y, z, qw, qx, qy, qz])
+    ground_truth = np.load(os.path.join(args.data_root, 'GT_pose.npy'))
+    ground_truth = convert_habitat_to_open3d(ground_truth)
+
+    # Evaluate
+    pred_positions = np.array([pose[:3, 3] for pose in predict_camera_position])
+    ground_truth_positions = ground_truth[:, :3]
     assert len(pred_positions) == len(ground_truth_positions)
     min_length = len(pred_positions)
 
@@ -482,10 +470,10 @@ if __name__ == '__main__':
     # Apply the same offset to the point cloud
     alignment_transform = np.eye(4)
     alignment_transform[:3, 3] = offset
-    result_pcd.transform(alignment_transform)
+    result_point_cloud.transform(alignment_transform)
 
     # Remove ceiling points before visualization
-    result_pcd = remove_ceiling_points(result_pcd, ceiling_height_threshold=0.2 if args.floor == 1 else 0.4, ground_truth=ground_truth)
+    result_point_cloud = remove_ceiling_points(result_point_cloud, ceiling_height_threshold=0.2 if args.floor == 1 else 0.4, ground_truth=ground_truth)
 
     # Visualize the trajectory
     lines = [[i, i + 1] for i in range(min_length - 1)]
@@ -504,6 +492,6 @@ if __name__ == '__main__':
 
     # Visualize together
     o3d.visualization.draw_geometries(
-        [result_pcd, estimated_line_set, ground_truth_line_set],
+        [result_point_cloud, estimated_line_set, ground_truth_line_set],
         window_name="Reconstruction Result"
     )
