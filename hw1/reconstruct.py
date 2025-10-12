@@ -46,36 +46,6 @@ def depth_image_to_point_cloud(rgb: np.ndarray, depth: np.ndarray) -> o3d.geomet
     return point_cloud
 
 
-def remove_ceiling_points(
-    pcd: o3d.geometry.PointCloud,
-    starting_height: float,
-    offset: float,
-) -> o3d.geometry.PointCloud:
-    """
-    Remove ceiling points from the point cloud based on relative height from starting point.
-    :param pcd: Input point cloud
-    :param starting_height: The Y-coordinate of the starting position (reference height).
-    :param offset: Height offset from starting point. Points higher than (starting_height + offset) are removed.
-    :return: Filtered point cloud without ceiling points
-    """
-    if len(pcd.points) == 0:
-        return pcd
-
-    points = np.asarray(pcd.points)
-    colors = np.asarray(pcd.colors) if pcd.has_colors() else None
-
-    # Remove points higher than starting_height + offset (Ceiling in reverse direction)
-    ceiling_threshold = starting_height - offset
-    mask = points[:, 1] > ceiling_threshold
-
-    filtered_pcd = o3d.geometry.PointCloud()
-    filtered_pcd.points = o3d.utility.Vector3dVector(points[mask])
-    if colors is not None:
-        filtered_pcd.colors = o3d.utility.Vector3dVector(colors[mask])
-
-    return filtered_pcd
-
-
 def preprocess_point_cloud(
     pcd: o3d.geometry.PointCloud, 
     voxel_size: float = 0.005,
@@ -420,6 +390,34 @@ def reconstruct(args: argparse.Namespace):
 
     return result_pcd, pred_cam_pos
 
+def remove_ceiling_points(
+    pcd: o3d.geometry.PointCloud,
+    starting_height: float,
+    offset: float,
+) -> o3d.geometry.PointCloud:
+    """
+    Remove ceiling points from the point cloud based on relative height from starting point.
+    :param pcd: Input point cloud
+    :param starting_height: The Y-coordinate of the starting position (reference height).
+    :param offset: Height offset from starting point. Points higher than (starting_height + offset) are removed.
+    :return: Filtered point cloud without ceiling points
+    """
+    if len(pcd.points) == 0:
+        return pcd
+
+    points = np.asarray(pcd.points)
+    colors = np.asarray(pcd.colors) if pcd.has_colors() else None
+
+    # Remove points higher than starting_height + offset (Ceiling in reverse direction)
+    ceiling_threshold = starting_height - offset
+    mask = points[:, 1] > ceiling_threshold
+
+    filtered_pcd = o3d.geometry.PointCloud()
+    filtered_pcd.points = o3d.utility.Vector3dVector(points[mask])
+    if colors is not None:
+        filtered_pcd.colors = o3d.utility.Vector3dVector(colors[mask])
+
+    return filtered_pcd
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
