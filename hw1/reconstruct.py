@@ -358,7 +358,7 @@ def reconstruct(args: argparse.Namespace):
     rgb_files, depth_files = _gather_rgb_depth(args.data_root)
     if args.floor == 2:
         # Local ICP on is much efficient than my ICP, so I can use smaller voxel size
-        voxel_size = 0.15 if args.version == 'my_icp' else 0.1
+        voxel_size = 0.125 if args.version == 'my_icp' else 0.05
     else:
         # Floor 1 mostly need way longer if use smaller voxel size, so I set it larger
         voxel_size = 0.2 if args.version == 'my_icp' else 0.125
