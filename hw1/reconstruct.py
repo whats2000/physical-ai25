@@ -277,17 +277,6 @@ def compute_fpfh(pcd: o3d.geometry.PointCloud, voxel_size: float) -> o3d.pipelin
     return fpfh
 
 
-def convert_habitat_to_open3d(gt_pose: np.ndarray) -> np.ndarray:
-    """
-    Convert Habitat camera poses to Open3D coordinate convention.
-    Habitat uses +X right, +Y up, +Z backward.
-    Open3D expects +Z forward, +Y up.
-    """
-    converted = gt_pose.copy()
-    converted[:, 2] *= -1  # flip Z
-    return converted
-
-
 def _gather_rgb_depth(data_root: str):
     """
     Gather and sort RGB and depth image file paths from the dataset directory.
@@ -428,7 +417,9 @@ if __name__ == '__main__':
 
     # Load ground truth poses (shape: Nx7 [x, y, z, qw, qx, qy, qz])
     ground_truth = np.load(os.path.join(args.data_root, 'GT_pose.npy'))
-    ground_truth = convert_habitat_to_open3d(ground_truth)
+
+    # Reflect positions across the XY plane to align with reconstruction (position only)
+    ground_truth[:, 2] *= -1
 
     # Evaluate
     pred_positions = np.array([pose[:3, 3] for pose in predict_camera_position])
