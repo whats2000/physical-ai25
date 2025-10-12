@@ -208,12 +208,12 @@ def execute_global_registration(
             mutual_filter=True,
             max_correspondence_distance=distance_threshold,
             estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False),
-            ransac_n=3,
+            ransac_n=4,
             checkers=[
                 o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
                 o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(distance_threshold)
             ],
-            criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(4000000, 500)
+            criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(50000, 1000)
         )
         return result
     
