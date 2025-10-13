@@ -39,7 +39,35 @@ Open VcXsrv with the following configuration:
 
 ## Reproduce the results
 
-1. Collect the simulation data
+### 1. Bird's Eye View (BEV) Projection
+
+```bash
+# Activate conda environment
+conda activate habitat
+
+# Run BEV to front view projection
+python bev.py
+```
+
+This script allows you to:
+- Select pixels on a bird's-eye view (top-down) image by clicking
+- Project the selected region to a front view (perspective) image
+- The script processes two image pairs by default:
+  - `bev_data/bev1.png` → `bev_data/front1.png`
+  - `bev_data/bev2.png` → `bev_data/front2.png`
+- Output files are saved in the `output/` directory:
+  - `selected_pixels_front1.png` and `selected_pixels_front2.png` (marked BEV images)
+  - `projection_front1.png` and `projection_front2.png` (projected front view)
+
+**Usage Instructions:**
+1. A window will pop up showing the BEV image
+2. Click on the image to select points (left mouse button)
+3. Close the window when done selecting points
+4. The projected region will be highlighted on the front view image
+5. Close the front view window after viewing the result
+6. Continue to the next image pair
+
+### 2. Collect the simulation data
 
 ```bash
 # Activate conda environment
@@ -52,7 +80,22 @@ python load.py -f 1
 python load.py -f 2
 ```
 
-2. Reproduce the results
+**Usage Instructions:**
+1. The script will start a Habitat simulation environment
+2. Three windows will appear showing RGB, depth, and semantic sensor views
+3. Use keyboard controls to navigate the agent:
+   - Press `w` to move forward
+   - Press `a` to turn left
+   - Press `d` to turn right
+   - Press `f` to finish and save the collected data
+4. The script will save RGB, depth, and semantic images at each step
+5. Camera poses (position and rotation) are automatically recorded
+6. All data is saved in the `data_collection/` directory:
+   - `first_floor/` or `second_floor/` depending on the floor selected
+   - Each folder contains `rgb/`, `depth/`, `semantic/` subdirectories
+   - Ground truth poses are saved as `GT_pose.npy`
+
+### 3. Reconstruction and Trajectory Estimation
 
 ```bash
 # Activate conda environment
@@ -70,3 +113,22 @@ python reconstruct.py -f 2
 # Reproduce Floor 2 results with Open3D ICP
 python reconstruct.py -f 2 --version open3d
 ```
+
+**Usage Instructions:**
+1. The script will process the collected RGB and depth images from the specified floor
+2. It performs the following steps automatically:
+   - Converts depth images to 3D point clouds
+   - Down-samples point clouds using voxel down-sampling
+   - Registers consecutive frames using ICP (Iterative Closest Point) algorithm
+   - Estimates camera trajectory by accumulating transformations
+3. Two ICP implementations are available:
+   - `my_icp` (default): Manually implemented ICP algorithm
+   - `open3d`: Uses Open3D's built-in ICP implementation
+4. After processing, the script will:
+   - Display the mean L2 distance between estimated and ground truth trajectories
+   - Open a 3D visualization window showing:
+     - Reconstructed point cloud (colored)
+     - Estimated trajectory (red line)
+     - Ground truth trajectory (black line)
+5. Close the visualization window when finished viewing the results
+6. Note: Ceiling points are automatically removed for better visualization

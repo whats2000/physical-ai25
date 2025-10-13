@@ -1,3 +1,4 @@
+import os
 from typing import List
 
 import cv2
@@ -161,6 +162,10 @@ if __name__ == "__main__":
 
     front_rgb = "bev_data/front1.png"
     top_rgb = "bev_data/bev1.png"
+    
+    # If output directory does not exist, create it
+    if not os.path.exists('output'):
+        os.makedirs('output')
 
     # click the pixels on window
     img = cv2.imread(top_rgb, 1)
