@@ -63,6 +63,9 @@ hw0/
 # Activate conda environment
 conda activate habitat
 
+# Install openpyxl for reading mapping file (MUST be installed in habitat environment)
+pip install openpyxl
+
 # Run the code (Note: Must run as module)
 python -m src.main
 ```

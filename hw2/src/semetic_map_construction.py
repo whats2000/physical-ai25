@@ -4,6 +4,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from PIL import Image
 
+plt.switch_backend('Agg')
+
 
 def remove_items_by_color(
     points_cloud: np.ndarray,
