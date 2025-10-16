@@ -2,6 +2,7 @@ from typing import Tuple, List, Union
 
 import numpy as np
 from matplotlib import pyplot as plt
+from PIL import Image
 
 
 def remove_items_by_color(
@@ -68,13 +69,15 @@ def save_semantic_map(
     points_cloud: np.ndarray,
     point_colors: np.ndarray,
     save_path: str = 'map.png'
-) -> None:
+) -> Tuple[Tuple[float, float], Tuple[float, float], Tuple[int, int]]:
     """
     Save a 2D semantic map from the point cloud and colors.
     Args:
         points_cloud: The input point cloud of shape (N, 3).
         point_colors: The colors of the points of shape (N, 3), values in [0, 255].
         save_path: The path to save the generated map.
+    Returns:
+        A tuple containing (x_limit, y_limit, image_size) for coordinate mapping.
     """
     plt.figure(figsize=(10, 10))
     plt.scatter(
@@ -89,4 +92,16 @@ def save_semantic_map(
     plt.axis('equal')
     plt.axis('off')    # Turn off axis, so I can focus on the map only
     plt.tight_layout()
+    
+    # Get the data limits for coordinate transformation, this is useful for 3rd step of the homework
+    x_limit = plt.xlim()
+    y_limit = plt.ylim()
+    
     plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0)
+    
+    # Get image size
+    image = Image.open(save_path)
+    image_size = image.size
+    image.close()
+    
+    return x_limit, y_limit, image_size

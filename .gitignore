@@ -1,4 +1,5 @@
-.idea/
+.idea
+.vscode
 *.xlaunch
 hw1/projection_front1.png
 hw1/projection_front2.png

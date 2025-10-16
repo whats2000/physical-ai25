@@ -28,5 +28,7 @@ if __name__ == '__main__':
     print(f'After removing top and bottom points: {filtered_points.shape[0]}')
 
     # Save a 2D semantic map
-    save_semantic_map(filtered_points, filtered_colors)
+    x_limit, y_limit, image_size = save_semantic_map(filtered_points, filtered_colors)
     print("2D semantic map saved as 'map.png'")
+    print(f"Map x_limit: {x_limit}, y_limit: {y_limit}")
+    print(f"Image size (width, height): {image_size}")
