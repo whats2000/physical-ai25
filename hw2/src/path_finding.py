@@ -161,27 +161,31 @@ class RRTPathFinder:
         path.reverse()
         return path
 
-    def find_path(self, start: Tuple[int, int], goal: Tuple[int, int]) -> Optional[List[Tuple[int, int]]]:
+    def find_path(self, start: Tuple[int, int], goals: List[Tuple[int, int]]) -> Optional[List[Tuple[int, int]]]:
         """
-        Find a path from start to goal using RRT.
+        Find a path from start to any of the goal points using RRT.
         
         Args:
             start: Start position (x, y) in pixels.
-            goal: Goal position (x, y) in pixels.
+            goals: List of goal positions (x, y) in pixels. Path will be found to the nearest reachable goal.
         
         Returns:
             List of (x, y) tuples representing the path, or None if no path found.
         """
         start_point = np.array(start, dtype=float)
-        goal_point = np.array(goal, dtype=float)
+        goal_points = [np.array(goal, dtype=float) for goal in goals]
 
         if not self._is_collision_free(start_point):
             print(f"Start point {start} is not collision-free!")
             return None
 
-        if not self._is_collision_free(goal_point):
-            print(f"Goal point {goal} is not collision-free!")
+        # Filter out goals that are not collision-free
+        valid_goal_points = [g for g in goal_points if self._is_collision_free(g)]
+        if not valid_goal_points:
+            print(f"No valid collision-free goal points!")
             return None
+        
+        print(f"Path finding with {len(valid_goal_points)} valid goal points")
 
         # Initialize tree
         root = TreeNode(start_point)
@@ -194,9 +198,10 @@ class RRTPathFinder:
                 # Print progress every 500 iterations
                 print(f"RRT iteration {iteration + 1}/{self.max_iterations}")
 
-            # Sample random point or goal
+            # Sample random point or one of the goals
             if np.random.random() < self.goal_sample_rate:
-                random_point = goal_point
+                # Randomly select one of the valid goal points
+                random_point = valid_goal_points[np.random.randint(0, len(valid_goal_points))]
             else:
                 random_point = self._random_point()
 
@@ -221,45 +226,51 @@ class RRTPathFinder:
                 tuple(new_node.position.astype(int))
             ))
 
-            # Check if we reached the goal
-            distance_to_goal = np.linalg.norm(new_node.position - goal_point)
-            if distance_to_goal >= goal_threshold:
-                # Not close enough to goal yet
-                continue
+            # Check if we reached any of the goals
+            for goal_point in valid_goal_points:
+                distance_to_goal = np.linalg.norm(new_node.position - goal_point)
+                if distance_to_goal >= goal_threshold:
+                    # Not close enough to this goal yet
+                    continue
 
-            # Check if path to goal is collision-free
-            if not self._is_path_collision_free(new_node.position, goal_point):
-                # The path to goal is not collision-free, we continue searching
-                continue
+                # Check if path to goal is collision-free
+                if not self._is_path_collision_free(new_node.position, goal_point):
+                    # The path to this goal is not collision-free, try next goal
+                    continue
 
-            # Try connecting directly to the goal
-            goal_node = TreeNode(goal_point, parent=new_node)
-            nodes.append(goal_node)
+                # Try connecting directly to the goal
+                goal_node = TreeNode(goal_point, parent=new_node)
+                nodes.append(goal_node)
 
-            # Extract path
-            path = self._extract_path(goal_node)
-            print(f"Path found in {iteration + 1} iterations with {len(path)} waypoints")
-            return path
+                # Extract path
+                path = self._extract_path(goal_node)
+                print(f"Path found in {iteration + 1} iterations with {len(path)} waypoints")
+                print(f"Reached goal at {tuple(goal_point.astype(int))}")
+                return path
 
         print("No path found!")
         return None
 
 
-def find_target_point_on_map(
+def find_target_points_on_map(
     map_image: np.ndarray,
     target_color: Tuple[int, int, int],
-    offset_distance: int = 40
-) -> Optional[Tuple[int, int]]:
+    offset_distance: int = 40,
+    max_points: int = 10,
+    min_point_separation: int = 30
+) -> List[Tuple[int, int]]:
     """
-    Find a safe point in front of the target item.
+    Find multiple well-distributed safe points around the target item for better path planning.
     
     Args:
         map_image: The semantic map image.
         target_color: RGB color of the target item.
         offset_distance: Distance to move away from the target.
+        max_points: Maximum number of feasible target points to return.
+        min_point_separation: Minimum distance between target points to avoid overlap.
     
     Returns:
-        A point (x, y) in front of the target, or None if target not found.
+        List of well-separated (x, y) points around the target, or empty list if target not found.
     """
     # Convert BGR to RGB and find target pixels
     target_bgr = (target_color[2], target_color[1], target_color[0])
@@ -269,7 +280,7 @@ def find_target_point_on_map(
     target_coords = np.where(mask)
     if len(target_coords[0]) == 0:
         print(f"Target color {target_color} not found on map!")
-        return None
+        return []
 
     # Calculate centroid
     center_y = int(np.mean(target_coords[0]))
@@ -284,76 +295,139 @@ def find_target_point_on_map(
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
     safe_occupancy = cv2.erode(occupancy_map, kernel, iterations=1)
 
-    # Try different directions with increasing distance
-    directions = [
-        (offset_distance, 0), (-offset_distance, 0),
-        (0, offset_distance), (0, -offset_distance),
-        (offset_distance, offset_distance), (-offset_distance, offset_distance),
-        (offset_distance, -offset_distance), (-offset_distance, -offset_distance)
-    ]
+    def is_far_enough_from_existing(
+        new_point: Tuple[int, int],
+        existing_points: List[Tuple[int, int]],
+        min_dist: int
+    ) -> bool:
+        """
+        Check if new point is far enough from all existing points.
+        Args:
+            new_point: The new point to check.
+            existing_points: List of existing points.
+            min_dist: Minimum required distance.
+        Returns:
+            True if far enough, False otherwise.
+        """
+        for ex_x, ex_y in existing_points:
+            dist = np.sqrt((new_point[0] - ex_x)**2 + (new_point[1] - ex_y)**2)
+            if dist < min_dist:
+                return False
+        return True
 
-    for dx, dy in directions:
-        new_x = center_x + dx
-        new_y = center_y + dy
+    # Collect multiple feasible target points with good separation
+    feasible_points = []
+    candidate_points = []
+    
+    # Try different directions and distances around the target
+    for distance_mult in [1.0, 1.5, 2.0, 0.7, 2.5]:
+        current_offset = int(offset_distance * distance_mult)
+        
+        # Generate more candidate directions in a circular pattern
+        num_directions = 24  # Increased for better coverage
+        for i in range(num_directions):
+            angle = 2 * np.pi * i / num_directions
+            dx = int(current_offset * np.cos(angle))
+            dy = int(current_offset * np.sin(angle))
+            
+            new_x = center_x + dx
+            new_y = center_y + dy
 
-        # Check if within the map bounds
-        if (0 > new_x or new_x >= safe_occupancy.shape[1]) or (0 > new_y or new_y >= safe_occupancy.shape[0]):
-            # Skip out-of-bounds points
-            continue
+            # Check if within the map bounds
+            if (0 > new_x or new_x >= safe_occupancy.shape[1]) or (0 > new_y or new_y >= safe_occupancy.shape[0]):
+                continue
 
-        # Check if the new point is in free space
-        if safe_occupancy[new_y, new_x] != 1:
-            # Skip occupied points
-            continue
+            # Check if the new point is in free space
+            if safe_occupancy[new_y, new_x] != 1:
+                continue
 
-        # Check surrounding area for safety
-        is_safe = True
-        for check_dx in range(-5, 6):
-            for check_dy in range(-5, 6):
-                check_x = new_x + check_dx
-                check_y = new_y + check_dy
+            # Check surrounding area for safety
+            is_safe = True
+            for check_dx in range(-5, 6):
+                for check_dy in range(-5, 6):
+                    check_x = new_x + check_dx
+                    check_y = new_y + check_dy
 
-                # Check bounds
-                if (0 > check_x or check_x >= safe_occupancy.shape[1]) or (
-                    0 > check_y or check_y >= safe_occupancy.shape[0]):
-                    # We skip out-of-bounds checks
-                    continue
+                    # Check bounds
+                    if (0 > check_x or check_x >= safe_occupancy.shape[1]) or (
+                        0 > check_y or check_y >= safe_occupancy.shape[0]):
+                        continue
 
-                # Check occupancy
-                if safe_occupancy[check_y, check_x] == 0:
-                    # We found an occupied cell in the surrounding area, we will consider this point unsafe
-                    is_safe = False
+                    # Check occupancy
+                    if safe_occupancy[check_y, check_x] == 0:
+                        is_safe = False
+                        break
+
+                if not is_safe:
                     break
 
-            if not is_safe:
-                # Early exit if already unsafe
-                break
+            if is_safe:
+                # Add to candidate points with distance from center for sorting
+                dist_from_center = np.sqrt((new_x - center_x)**2 + (new_y - center_y)**2)
+                candidate_points.append((new_x, new_y, dist_from_center))
+    
+    # Sort candidates by distance from center
+    candidate_points.sort(key=lambda p: p[2])
+    
+    # Select well-separated points from candidates
+    for candidate in candidate_points:
+        point = (candidate[0], candidate[1])
 
-        if is_safe:
-            # Early return if a safe point is found
-            print(f"Goal point found at ({new_x}, {new_y})")
-            return new_x, new_y
+        # If the point is not far enough from existing feasible points, skip it
+        if not is_far_enough_from_existing(point, feasible_points, min_point_separation):
+            continue
 
-    # Target the nearest safe point in front of the target
+        # Check if this point is far enough from already selected points
+        feasible_points.append(point)
+
+        if len(feasible_points) >= max_points:
+            break
+
+    # If we found feasible points, return them
+    if feasible_points:
+        print(f"Found {len(feasible_points)} well-separated feasible goal points around target")
+        print(f"(Minimum separation: {min_point_separation} pixels)")
+        return feasible_points
+    
+    # Fallback: find nearest safe points from free space with separation constraint
+    print("Using fallback: finding nearest safe points from free space")
     free_coords = np.where(safe_occupancy == 1)
     if len(free_coords[0]) > 0:
         distances = np.sqrt((free_coords[1] - center_x) ** 2 + (free_coords[0] - center_y) ** 2)
-        closest_idx = np.argmin(distances)
-        goal_x = free_coords[1][closest_idx]
-        goal_y = free_coords[0][closest_idx]
-        print(f"Nearest safe goal point found at ({goal_x}, {goal_y})")
-        return goal_x, goal_y
+        # Sort by distance
+        sorted_indices = np.argsort(distances)
+        
+        fallback_points = []
+        for idx in sorted_indices:
+            goal_x = int(free_coords[1][idx])
+            goal_y = int(free_coords[0][idx])
+            candidate = (goal_x, goal_y)
 
-    # There is no safe point found
-    print("No safe goal point found in front of the target!")
-    return None
+            # Check separation from existing fallback points
+            if not is_far_enough_from_existing(candidate, fallback_points, min_point_separation):
+                continue
+
+            # Only add if far enough from existing points
+            fallback_points.append(candidate)
+
+            if len(fallback_points) >= max_points:
+                # We have enough points, so stop
+                break
+
+        if fallback_points:
+            print(f"Found {len(fallback_points)} well-separated fallback goal points")
+            return fallback_points
+
+    # There are no safe points found
+    print("No safe goal points found around the target!")
+    return []
 
 
 def draw_path_on_map(
     map_image: np.ndarray,
     path: List[Tuple[int, int]],
     start: Tuple[int, int],
-    goal: Tuple[int, int],
+    goals: List[Tuple[int, int]],
     explored_nodes: List[Tuple[int, int]],
     explored_edges: List[Tuple[Tuple[int, int], Tuple[int, int]]],
     output_path: str = 'path_map.png'
@@ -365,7 +439,7 @@ def draw_path_on_map(
         map_image: Original map image.
         path: List of (x, y) tuples representing the final path (red).
         start: Start position (x, y) - green circle.
-        goal: Goal position (x, y) - blue circle.
+        goals: List of goal positions (x, y) - light blue circles for candidates, dark blue for reached.
         explored_nodes: All explored nodes during RRT - purple squares.
         explored_edges: All explored edges during RRT - black thin lines.
         output_path: Path to save the output image.
@@ -375,17 +449,17 @@ def draw_path_on_map(
     """
     result_image = map_image.copy()
 
-    # 1. Draw explored edges (black thin lines)
+    # Draw explored edges (black thin lines)
     for pt1, pt2 in explored_edges:
         cv2.line(result_image, pt1, pt2, (0, 0, 0), 2)  # Black
 
-    # 2. Draw final path (red lines)
+    # Draw final path (red lines)
     for i in range(len(path) - 1):
         pt1 = tuple(path[i])
         pt2 = tuple(path[i + 1])
         cv2.line(result_image, pt1, pt2, (0, 0, 255), 5)  # Red
 
-    # 3. Draw explored nodes (purple squares)
+    # Draw explored nodes (purple squares)
     for node in explored_nodes:
         cv2.rectangle(
             result_image,
@@ -394,11 +468,18 @@ def draw_path_on_map(
             (128, 0, 128), -1  # Purple
         )
 
-    # 4. Draw start point (green circle)
-    cv2.circle(result_image, start, 15, (0, 255, 0), -1)  # Green
+    # Draw candidate goal points
+    reached_goal = tuple(path[-1]) if path else None
+    for goal in goals:
+        if goal == reached_goal:
+            # Draw the reached goal in light blue (larger)
+            cv2.circle(result_image, goal, 15, (255, 200, 0), -1) # Light Blue
+        else:
+            # Draw candidate goals in light blue (smaller)
+            cv2.circle(result_image, goal, 10, (255, 200, 0), 2)  # Light Blue (Hollow)
 
-    # 5. Draw goal point (light blue circle)
-    cv2.circle(result_image, goal, 15, (255, 200, 0), -1)  # Light Blue
+    # Draw start point (green circle)
+    cv2.circle(result_image, start, 15, (0, 255, 0), -1)  # Green
 
     cv2.imwrite(output_path, result_image)
     print(f"Path map saved to {output_path}")

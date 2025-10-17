@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from src.path_finding import RRTPathFinder, find_target_point_on_map, draw_path_on_map
+from src.path_finding import RRTPathFinder, find_target_points_on_map, draw_path_on_map
 from src.semetic_map_construction import remove_items_by_color, remove_top_and_bottom, save_semantic_map
 
 SCALE_FACTOR = 0.2
@@ -72,14 +72,14 @@ if __name__ == '__main__':
     mapping_dataframe = pd.read_excel(args.mapping_file)
 
     selected_target = None
-    target_point = None
+    target_points = []
 
     print("=" * 50)
 
     # Load the 2D semantic map image
     map_image = cv2.imread('map.png')
 
-    while selected_target is None or target_point is None:
+    while selected_target is None or not target_points:
         # Let user input the target item to search
         target_item = input("Enter the target item to search (e.g., 'chair', 'table'): ").strip().lower()
 
@@ -93,23 +93,29 @@ if __name__ == '__main__':
             map(int, selected_target['Color_Code (R,G,B)'].strip('()').split(','))
         )
 
-        # Check if the target color is reachable in the map
-        target_point = find_target_point_on_map(map_image, selected_target['Color_Code (R,G,B)'], offset_distance=40)
+        # Find multiple reachable points around the target
+        target_points = find_target_points_on_map(
+            map_image, 
+            selected_target['Color_Code (R,G,B)'], 
+            offset_distance=40,
+            max_points=10
+        )
 
-        # If there is no reachable point for the target item, ask for a different item
-        if target_point is None:
-            print(f"No reachable point found for item '{target_item}'. Please choose a different item.")
+        # If there are no reachable points for the target item, ask for a different item
+        if not target_points:
+            print(f"No reachable points found for item '{target_item}'. Please choose a different item.")
             selected_target = None
             continue
 
-    # Highlight the selected target item with bounding circle
-    cv2.circle(
-        map_image,
-        target_point,
-        30,
-        (255, 200, 0),
-        5
-    )
+    # Highlight all candidate target points with circles
+    for i, target_point in enumerate(target_points):
+        cv2.circle(
+            map_image,
+            target_point,
+            20,
+            (255, 200, 0),
+            3
+        )
 
     print(f"Selected target item: {selected_target['Name']}, Color code: {selected_target['Color_Code (R,G,B)']}")
 
@@ -153,9 +159,9 @@ if __name__ == '__main__':
         robot_radius=ROBOT_RADIUS
     )
     
-    # Find path from start to target
-    print(f"Finding path from {starting_point} to {target_point}...")
-    path = path_finder.find_path(starting_point, target_point)
+    # Find path from start to any of the target points
+    print(f"Finding path from {starting_point} to one of {len(target_points)} target points...")
+    path = path_finder.find_path(starting_point, target_points)
     
     if path is None:
         print("Failed to find a valid path!")
@@ -169,7 +175,7 @@ if __name__ == '__main__':
         map_image, 
         path, 
         starting_point, 
-        target_point,
+        target_points,
         path_finder.explored_nodes,
         path_finder.explored_edges,
         'path_map.png'
