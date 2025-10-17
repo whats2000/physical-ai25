@@ -14,7 +14,9 @@ class TreeNode:
 
 
 class RRTPathFinder:
-    """RRT path finding algorithm."""
+    """
+    RRT path finding algorithm.
+    """
 
     def __init__(
         self,
@@ -114,7 +116,14 @@ class RRTPathFinder:
         return True
 
     def _steer(self, from_node: TreeNode, to_point: np.ndarray) -> TreeNode:
-        """Steer from from_node towards to_point by step_size."""
+        """
+        Steer from from_node towards to_point by step_size.
+        Args:
+            from_node: The node to steer from.
+            to_point: The target point to steer towards.
+        Returns:
+            A new TreeNode in the direction of to_point.
+        """
         direction = to_point - from_node.position
         distance = np.linalg.norm(direction)
 
@@ -126,7 +135,9 @@ class RRTPathFinder:
         return TreeNode(new_position, parent=from_node)
 
     def _random_point(self) -> np.ndarray:
-        """Sample a random point in the map."""
+        """
+        Sample a random point in the map.
+        """
         x = np.random.uniform(0, self.map_width)
         y = np.random.uniform(0, self.map_height)
         return np.array([x, y])
@@ -179,6 +190,10 @@ class RRTPathFinder:
         goal_threshold = self.step_size * 1.5  # 1.5x step size for goal reach
 
         for iteration in range(self.max_iterations):
+            if (iteration + 1) % 500 == 0:
+                # Print progress every 500 iterations
+                print(f"RRT iteration {iteration + 1}/{self.max_iterations}")
+
             # Sample random point or goal
             if np.random.random() < self.goal_sample_rate:
                 random_point = goal_point
@@ -192,31 +207,39 @@ class RRTPathFinder:
             # Steer towards random point
             new_node = self._steer(nearest_node, random_point)
 
-            # Check collision
-            if self._is_path_collision_free(nearest_node.position, new_node.position):
-                nodes.append(new_node)
+            # Check for collisions, if any, skip this node
+            if not self._is_path_collision_free(nearest_node.position, new_node.position):
+                continue
 
-                # Store exploration data
-                self.explored_nodes.append(tuple(new_node.position.astype(int)))
-                self.explored_edges.append((
-                    tuple(nearest_node.position.astype(int)),
-                    tuple(new_node.position.astype(int))
-                ))
+            # Add new node to tree
+            nodes.append(new_node)
 
-                # Check if we reached the goal
-                distance_to_goal = np.linalg.norm(new_node.position - goal_point)
-                if distance_to_goal < goal_threshold:
-                    if self._is_path_collision_free(new_node.position, goal_point):
-                        goal_node = TreeNode(goal_point, parent=new_node)
-                        nodes.append(goal_node)
+            # Store exploration data
+            self.explored_nodes.append(tuple(new_node.position.astype(int)))
+            self.explored_edges.append((
+                tuple(nearest_node.position.astype(int)),
+                tuple(new_node.position.astype(int))
+            ))
 
-                        # Extract path
-                        path = self._extract_path(goal_node)
-                        print(f"Path found in {iteration + 1} iterations with {len(path)} waypoints")
-                        return path
+            # Check if we reached the goal
+            distance_to_goal = np.linalg.norm(new_node.position - goal_point)
+            if distance_to_goal >= goal_threshold:
+                # Not close enough to goal yet
+                continue
 
-            if (iteration + 1) % 500 == 0:
-                print(f"RRT iteration {iteration + 1}/{self.max_iterations}")
+            # Check if path to goal is collision-free
+            if not self._is_path_collision_free(new_node.position, goal_point):
+                # The path to goal is not collision-free, we continue searching
+                continue
+
+            # Try connecting directly to the goal
+            goal_node = TreeNode(goal_point, parent=new_node)
+            nodes.append(goal_node)
+
+            # Extract path
+            path = self._extract_path(goal_node)
+            print(f"Path found in {iteration + 1} iterations with {len(path)} waypoints")
+            return path
 
         print("No path found!")
         return None
@@ -240,8 +263,9 @@ def find_target_point_on_map(
     """
     # Convert BGR to RGB and find target pixels
     target_bgr = (target_color[2], target_color[1], target_color[0])
-    mask = np.all(np.abs(map_image.astype(int) - target_bgr) < 5, axis=2)
+    mask = cv2.inRange(map_image, np.array(target_bgr), np.array(target_bgr))
 
+    # Get coordinates of target color
     target_coords = np.where(mask)
     if len(target_coords[0]) == 0:
         print(f"Target color {target_color} not found on map!")
@@ -272,38 +296,46 @@ def find_target_point_on_map(
         new_x = center_x + dx
         new_y = center_y + dy
 
-        if 0 <= new_x < safe_occupancy.shape[1] and 0 <= new_y < safe_occupancy.shape[0]:
-            # Check if point and surrounding area are safe
-            if safe_occupancy[new_y, new_x] == 1:
-                # Verify a small area around the point is also free
-                is_safe = True
-                for check_dx in range(-5, 6):
-                    for check_dy in range(-5, 6):
-                        check_x = new_x + check_dx
-                        check_y = new_y + check_dy
-                        if 0 <= check_x < safe_occupancy.shape[1] and 0 <= check_y < safe_occupancy.shape[0]:
-                            if safe_occupancy[check_y, check_x] == 0:
-                                is_safe = False
-                                break
-                    if not is_safe:
-                        break
+        # Check if within the map bounds
+        if (0 > new_x or new_x >= safe_occupancy.shape[1]) or (0 > new_y or new_y >= safe_occupancy.shape[0]):
+            # Skip out-of-bounds points
+            continue
 
-                if is_safe:
-                    print(f"Goal point found at ({new_x}, {new_y})")
-                    return new_x, new_y
+        # Check if the new point is in free space
+        if safe_occupancy[new_y, new_x] != 1:
+            # Skip occupied points
+            continue
 
-    print("Warning: Could not find a safe goal point, using best available position")
+        # Check surrounding area for safety
+        is_safe = True
+        for check_dx in range(-5, 6):
+            for check_dy in range(-5, 6):
+                check_x = new_x + check_dx
+                check_y = new_y + check_dy
 
-    # Fallback: find nearest free point in safe area
-    free_coords = np.where(safe_occupancy == 1)
-    if len(free_coords[0]) > 0:
-        distances = np.sqrt((free_coords[1] - center_x) ** 2 + (free_coords[0] - center_y) ** 2)
-        closest_idx = np.argmin(distances)
-        goal_x = free_coords[1][closest_idx]
-        goal_y = free_coords[0][closest_idx]
-        print(f"Fallback goal point found at ({goal_x}, {goal_y})")
-        return goal_x, goal_y
+                # Check bounds
+                if (0 > check_x or check_x >= safe_occupancy.shape[1]) or (
+                    0 > check_y or check_y >= safe_occupancy.shape[0]):
+                    # We skip out-of-bounds checks
+                    continue
 
+                # Check occupancy
+                if safe_occupancy[check_y, check_x] == 0:
+                    # We found an occupied cell in the surrounding area, we will consider this point unsafe
+                    is_safe = False
+                    break
+
+            if not is_safe:
+                # Early exit if already unsafe
+                break
+
+        if is_safe:
+            # Early return if a safe point is found
+            print(f"Goal point found at ({new_x}, {new_y})")
+            return new_x, new_y
+
+    # There is no safe point found
+    print("No safe goal point found in front of the target!")
     return None
 
 
