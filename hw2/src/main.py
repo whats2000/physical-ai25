@@ -98,7 +98,7 @@ if __name__ == '__main__':
             map_image, 
             selected_target['Color_Code (R,G,B)'], 
             offset_distance=40,
-            max_points=10
+            max_points=30
         )
 
         # If there are no reachable points for the target item, ask for a different item
