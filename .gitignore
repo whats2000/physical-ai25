@@ -7,3 +7,5 @@ hw1/selected_pixels_front1.png
 hw1/selected_pixels_front2.png
 /hw1/output
 *.pyc
+hw2/path_map.png
+hw2/occupancy_map.png

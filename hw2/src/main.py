@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from src.semetic_map_construction import remove_items_by_color, remove_top_and_bottom, save_semantic_map
+from src.path_finding import RRTPathFinder, find_target_point_on_map, draw_path_on_map
 
 SCALE_FACTOR = 0.2
 
@@ -114,4 +115,58 @@ if __name__ == '__main__':
     else:
         raise ValueError("No starting point selected.")
 
+    print("=" * 50)
+
+    # Load the map image for RRT
+    map_image = cv2.imread('map.png')
+    
+    # Find target point on map with larger offset for safety
+    target_color = selected_target['Color_Code (R,G,B)']
+    target_point = find_target_point_on_map(map_image, target_color, offset_distance=40)
+    
+    if target_point is None:
+        print(f"Could not find target point for {selected_target['Name']}")
+        exit(1)
+    
+    print("=" * 50)
+    
+    # Initialize RRT pathfinder with improved parameters
+    path_finder = RRTPathFinder(
+        map_image=map_image,
+        step_size=80.0,
+        max_iterations=5000,
+        goal_sample_rate=0.15,
+        robot_radius=10.0
+    )
+    
+    # Find path from start to target
+    print(f"Finding path from {starting_point} to {target_point}...")
+    path = path_finder.find_path(starting_point, target_point)
+    
+    if path is None:
+        print("Failed to find a valid path!")
+        exit(1)
+    
+    print("=" * 50)
+    print(f"Path found with {len(path)} waypoints!")
+    
+    # Draw path on map with RRT exploration visualization
+    path_map = draw_path_on_map(
+        map_image, 
+        path, 
+        starting_point, 
+        target_point,
+        path_finder.explored_nodes,
+        path_finder.explored_edges,
+        'path_map.png'
+    )
+    
+    # Display the path map with resizing for better visibility
+    display_image = cv2.resize(path_map, (new_width, new_height))
+    cv2.namedWindow('Path Result', cv2.WINDOW_AUTOSIZE)
+    cv2.imshow('Path Result', display_image)
+    print("Displaying path result... Press any key to close.")
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
     print("=" * 50)
