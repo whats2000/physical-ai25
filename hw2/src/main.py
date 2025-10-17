@@ -8,6 +8,7 @@ from src.path_finding import RRTPathFinder, find_target_point_on_map, draw_path_
 from src.semetic_map_construction import remove_items_by_color, remove_top_and_bottom, save_semantic_map
 
 SCALE_FACTOR = 0.2
+ROBOT_RADIUS = 10.0
 
 
 def pick_starting_point(event: int, x: int, y: int, _flags, _param):
@@ -24,7 +25,9 @@ def pick_starting_point(event: int, x: int, y: int, _flags, _param):
     if event == cv2.EVENT_LBUTTONDOWN:
         starting_point = (x, y)
         map_image = original_map.copy()
-        cv2.circle(map_image, (x, y), 5, (0, 255, 0), -1)
+        # Draw circle with robot radius scaled to display size
+        scaled_radius = int(ROBOT_RADIUS * SCALE_FACTOR)
+        cv2.circle(map_image, (x, y), scaled_radius, (0, 255, 0), 2)
         cv2.imshow('map', map_image)
 
 
@@ -147,7 +150,7 @@ if __name__ == '__main__':
         step_size=80.0,
         max_iterations=5000,
         goal_sample_rate=0.15,
-        robot_radius=10.0
+        robot_radius=ROBOT_RADIUS
     )
     
     # Find path from start to target
