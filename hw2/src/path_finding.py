@@ -334,6 +334,16 @@ def find_target_point_on_map(
             print(f"Goal point found at ({new_x}, {new_y})")
             return new_x, new_y
 
+    # Target the nearest safe point in front of the target
+    free_coords = np.where(safe_occupancy == 1)
+    if len(free_coords[0]) > 0:
+        distances = np.sqrt((free_coords[1] - center_x) ** 2 + (free_coords[0] - center_y) ** 2)
+        closest_idx = np.argmin(distances)
+        goal_x = free_coords[1][closest_idx]
+        goal_y = free_coords[0][closest_idx]
+        print(f"Nearest safe goal point found at ({goal_x}, {goal_y})")
+        return goal_x, goal_y
+
     # There is no safe point found
     print("No safe goal point found in front of the target!")
     return None
@@ -387,8 +397,8 @@ def draw_path_on_map(
     # 4. Draw start point (green circle)
     cv2.circle(result_image, start, 15, (0, 255, 0), -1)  # Green
 
-    # 5. Draw goal point (blue circle)
-    cv2.circle(result_image, goal, 15, (255, 0, 0), -1)  # Blue
+    # 5. Draw goal point (light blue circle)
+    cv2.circle(result_image, goal, 15, (255, 200, 0), -1)  # Light Blue
 
     cv2.imwrite(output_path, result_image)
     print(f"Path map saved to {output_path}")

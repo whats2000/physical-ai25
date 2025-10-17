@@ -4,8 +4,8 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from src.semetic_map_construction import remove_items_by_color, remove_top_and_bottom, save_semantic_map
 from src.path_finding import RRTPathFinder, find_target_point_on_map, draw_path_on_map
+from src.semetic_map_construction import remove_items_by_color, remove_top_and_bottom, save_semantic_map
 
 SCALE_FACTOR = 0.2
 
@@ -69,27 +69,48 @@ if __name__ == '__main__':
     mapping_dataframe = pd.read_excel(args.mapping_file)
 
     selected_target = None
+    target_point = None
 
     print("=" * 50)
 
-    while selected_target is None:
+    # Load the 2D semantic map image
+    map_image = cv2.imread('map.png')
+
+    while selected_target is None or target_point is None:
         # Let user input the target item to search
         target_item = input("Enter the target item to search (e.g., 'chair', 'table'): ").strip().lower()
 
-        # Check if the item exists in the mapping dataframe
-        if target_item in mapping_dataframe['Name'].str.lower().values:
-            selected_target = mapping_dataframe[mapping_dataframe['Name'].str.lower() == target_item].iloc[0]
-            selected_target['Color_Code (R,G,B)'] = tuple(
-                map(int, selected_target['Color_Code (R,G,B)'].strip('()').split(',')))
-        else:
+        # Check if the target item exists in the mapping file
+        if target_item not in mapping_dataframe['Name'].str.lower().values:
             print(f"Item '{target_item}' not found in the mapping file. Please try again.")
+            continue
+
+        selected_target = mapping_dataframe[mapping_dataframe['Name'].str.lower() == target_item].iloc[0]
+        selected_target['Color_Code (R,G,B)'] = tuple(
+            map(int, selected_target['Color_Code (R,G,B)'].strip('()').split(','))
+        )
+
+        # Check if the target color is reachable in the map
+        target_point = find_target_point_on_map(map_image, selected_target['Color_Code (R,G,B)'], offset_distance=40)
+
+        # If there is no reachable point for the target item, ask for a different item
+        if target_point is None:
+            print(f"No reachable point found for item '{target_item}'. Please choose a different item.")
+            selected_target = None
+            continue
+
+    # Highlight the selected target item with bounding circle
+    cv2.circle(
+        map_image,
+        target_point,
+        30,
+        (255, 200, 0),
+        5
+    )
 
     print(f"Selected target item: {selected_target['Name']}, Color code: {selected_target['Color_Code (R,G,B)']}")
 
     print("=" * 50)
-
-    # Open the map for pick the starting point
-    map_image = cv2.imread('map.png')
 
     # Resize the map to make the window smaller
     new_width = int(image_size[0] * SCALE_FACTOR)
@@ -119,16 +140,6 @@ if __name__ == '__main__':
 
     # Load the map image for RRT
     map_image = cv2.imread('map.png')
-    
-    # Find target point on map with larger offset for safety
-    target_color = selected_target['Color_Code (R,G,B)']
-    target_point = find_target_point_on_map(map_image, target_color, offset_distance=40)
-    
-    if target_point is None:
-        print(f"Could not find target point for {selected_target['Name']}")
-        exit(1)
-    
-    print("=" * 50)
     
     # Initialize RRT pathfinder with improved parameters
     path_finder = RRTPathFinder(
