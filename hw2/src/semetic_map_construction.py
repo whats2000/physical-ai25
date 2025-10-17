@@ -71,15 +71,15 @@ def save_semantic_map(
     points_cloud: np.ndarray,
     point_colors: np.ndarray,
     save_path: str = 'map.png'
-) -> Tuple[Tuple[float, float], Tuple[float, float], Tuple[int, int]]:
+) -> Tuple[np.ndarray, Tuple[float, float], Tuple[float, float], Tuple[int, int]]:
     """
-    Save a 2D semantic map from the point cloud and colors.
+    Save a 2D semantic map from the point cloud and colors and return it as a NumPy array.
     Args:
         points_cloud: The input point cloud of shape (N, 3).
         point_colors: The colors of the points of shape (N, 3), values in [0, 255].
         save_path: The path to save the generated map.
     Returns:
-        A tuple containing (x_limit, y_limit, image_size) for coordinate mapping.
+        A tuple containing the map as a NumPy array, (x_limit, y_limit, image_size) for coordinate mapping.
     """
     plt.figure(figsize=(10, 10))
     plt.scatter(
@@ -101,9 +101,11 @@ def save_semantic_map(
     
     plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0)
     
-    # Get image size
+    # Get image size and array
     image = Image.open(save_path)
+    image = image.convert('RGB')
     image_size = image.size
+    map_array = np.array(image)
     image.close()
     
-    return x_limit, y_limit, image_size
+    return map_array, x_limit, y_limit, image_size
