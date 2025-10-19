@@ -9,3 +9,4 @@ hw1/selected_pixels_front2.png
 *.pyc
 hw2/path_map.png
 hw2/occupancy_map.png
+/hw2/results/habitat_visualization
