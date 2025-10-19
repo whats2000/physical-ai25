@@ -296,15 +296,6 @@ def main() -> None:
             cv2.imshow("RGB View", transform_rgb_bgr(observations["color_sensor"]))
             cv2.imshow("Depth View", transform_depth(observations["depth_sensor"]))
             cv2.imshow("Semantic View", transform_semantic(observations["semantic_sensor"]))
-        elif key == ord('s'):
-            observations = simulation.step("move_backward")
-            agent_state = agent.get_state()
-            current_position = agent_state.position
-            # Update map with new position
-            update_map_display(current_position, x_limit, y_limit, image_size, data_bounds)
-            cv2.imshow("RGB View", transform_rgb_bgr(observations["color_sensor"]))
-            cv2.imshow("Depth View", transform_depth(observations["depth_sensor"]))
-            cv2.imshow("Semantic View", transform_semantic(observations["semantic_sensor"]))
 
     cv2.destroyAllWindows()
     simulation.close()
