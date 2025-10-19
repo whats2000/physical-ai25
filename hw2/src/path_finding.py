@@ -1,6 +1,7 @@
-import numpy as np
-import cv2
 from typing import Tuple, List, Optional
+
+import cv2
+import numpy as np
 
 
 class TreeNode:
