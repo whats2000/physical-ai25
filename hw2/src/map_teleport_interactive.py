@@ -21,7 +21,8 @@ from src.map_utils import (
 simulation: Optional[habitat_sim.Simulator] = None
 agent: Optional[habitat_sim.Agent] = None
 current_position: Optional[np.ndarray] = None
-map_limit: Optional[Tuple[Tuple[float, float],  # x_limit
+map_limit: Optional[
+    Tuple[Tuple[float, float],  # x_limit
     Tuple[float, float],  # y_limit
     Tuple[int, int],  # image_size
     Optional[Tuple[float, float, float, float]]]  # data_bounds
@@ -70,14 +71,14 @@ def update_map_display(
         if original_full_map is not None:
             # Match colors (allowing some tolerance)
             mask = np.all(np.abs(original_full_map - target_color[::-1]) < 5, axis=2)
-            
+
             # Create red overlay
             overlay = original_full_map.copy()
             overlay[mask] = [0, 0, 255]  # Red in BGR
-            
+
             # Blend with opacity
             highlighted_map = cv2.addWeighted(original_full_map, 0.6, overlay, 0.4, 0)
-            
+
             # Resize for display
             new_width = int(image_size[0] * SCALE_FACTOR)
             new_height = int(image_size[1] * SCALE_FACTOR)
@@ -109,14 +110,14 @@ def update_3d_views(observations: Dict[str, np.ndarray]) -> None:
         observations: Dictionary of sensor observations.
     """
     global selected_item_name, original_observations, name_to_instance_ids
-    
+
     # Store original observations
     original_observations = {
         'rgb': transform_rgb_bgr(observations["color_sensor"]),
         'depth': transform_depth(observations["depth_sensor"]),
         'semantic': transform_semantic(observations["semantic_sensor"])
     }
-    
+
     if selected_item_name:
         # Apply highlighting to all views
         rgb_highlighted = apply_semantic_highlighting(
@@ -126,7 +127,7 @@ def update_3d_views(observations: Dict[str, np.ndarray]) -> None:
             name_to_instance_ids,
             is_depth=False
         )
-        
+
         depth_highlighted = apply_semantic_highlighting(
             original_observations['depth'].copy(),
             observations["semantic_sensor"],
@@ -134,7 +135,7 @@ def update_3d_views(observations: Dict[str, np.ndarray]) -> None:
             name_to_instance_ids,
             is_depth=True
         )
-        
+
         semantic_highlighted = apply_semantic_highlighting(
             original_observations['semantic'].copy(),
             observations["semantic_sensor"],
@@ -142,7 +143,7 @@ def update_3d_views(observations: Dict[str, np.ndarray]) -> None:
             name_to_instance_ids,
             is_depth=False
         )
-        
+
         cv2.imshow("RGB View", rgb_highlighted)
         cv2.imshow("Depth View", depth_highlighted)
         cv2.imshow("Semantic View", semantic_highlighted)
@@ -161,30 +162,39 @@ def select_item_interactive() -> Optional[str]:
         Selected item name or None if cancelled.
     """
     global color_mapping
-    
+
     items = sorted(color_mapping.keys())
-    
+
     if not items:
         print("No items available!")
         return None
-    
+
     print("\n" + "=" * 50)
-    print("Available items to highlight:")
+    print(f"Available items to highlight ({len(items)} items):")
     print("=" * 50)
-    for item in items:
-        print(f"  - {item}")
+
+    # Display in columns with numbers
+    num_columns = 4
+    for i, item in enumerate(items, 1):
+        # Print item with number, padded for alignment
+        print(f"{i:3d}. {item:25s}", end="")
+
+        # Add newline after every num_columns items or at the end
+        if i % num_columns == 0 or i == len(items):
+            print()
+
     print("=" * 50)
-    
+
     try:
         choice = input("Enter item name (or 'c' to cancel): ").strip()
         if choice.lower() == 'c':
             return None
-        
+
         # Find exact match (case-insensitive)
         for item in items:
             if item.lower() == choice.lower():
                 return item
-        
+
         print(f"Item '{choice}' not found!")
         return None
     except (ValueError, KeyboardInterrupt):
@@ -213,7 +223,7 @@ def load_mappings(
     df = pd.read_excel(mapping_file)
     color_map = {}
     items_in_2d = set()
-    
+
     for _, row in df.iterrows():
         name = row['Name']
         color_str = row['Color_Code (R,G,B)']
@@ -222,22 +232,22 @@ def load_mappings(
         r, g, b = map(int, color_str.split(','))
         color_map[name] = (r, g, b)
         items_in_2d.add(name)
-    
+
     # Load semantic mapping from JSON (3D semantic data)
     with open(semantic_file, 'r') as f:
         semantic_data = json.load(f)
-    
+
     # Build mapping from instance IDs to class names
     # The semantic observation contains instance IDs, not class IDs
     instance_to_name = {}
     class_names_in_3d = set()
-    
+
     for obj in semantic_data['objects']:
         instance_id = obj['id']
         class_name = obj['class_name']
         instance_to_name[instance_id] = class_name
         class_names_in_3d.add(class_name)
-    
+
     # Build name_to_instance_ids mapping
     # This maps class names to a list of all instance IDs with that class
     name_to_instances = {}
@@ -245,19 +255,19 @@ def load_mappings(
         if class_name not in name_to_instances:
             name_to_instances[class_name] = []
         name_to_instances[class_name].append(instance_id)
-    
+
     # Filter to only include items that exist in both 2D and 3D
     filtered_color_map = {}
     name_to_semantic_id = {}
-    
+
     for name in items_in_2d:
         if name in name_to_instances:
             filtered_color_map[name] = color_map[name]
             # Store all instance IDs for this class name
             name_to_semantic_id[name] = name_to_instances[name]
-    
+
     print(f"Loaded {len(filtered_color_map)} items available for highlighting")
-    
+
     return filtered_color_map, instance_to_name, name_to_semantic_id
 
 
@@ -266,16 +276,16 @@ def semantic_click_callback(event: int, x: int, y: int, _flags: int, _param: Opt
     Mouse callback function for clicking on the semantic view to see item info.
     """
     global simulation, semantic_mapping
-    
+
     if event == cv2.EVENT_LBUTTONDOWN:
         # Get current semantic observation
         observations = simulation.get_sensor_observations()
         semantic_obs = observations["semantic_sensor"]
-        
+
         # Get the semantic ID at the clicked position
         if 0 <= y < semantic_obs.shape[0] and 0 <= x < semantic_obs.shape[1]:
             semantic_id = semantic_obs[y, x]
-            
+
             # Look up the name
             if semantic_id in semantic_mapping:
                 item_name = semantic_mapping[semantic_id]
@@ -486,7 +496,7 @@ def main() -> None:
     # Setup windows
     cv2.namedWindow('Map - Click to Teleport')
     cv2.setMouseCallback('Map - Click to Teleport', mouse_callback)
-    
+
     cv2.namedWindow('Semantic View')
     cv2.setMouseCallback('Semantic View', semantic_click_callback)
 
