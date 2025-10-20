@@ -1,16 +1,20 @@
 import argparse
-from typing import Tuple, Optional
+import json
+from typing import Tuple, Optional, Dict, List
 
 import cv2
 import habitat_sim
 import numpy as np
+import pandas as pd
 
 from src.map_utils import (
     transform_semantic,
     transform_depth,
     transform_rgb_bgr,
     pixel_to_habitat_coords,
-    habitat_to_pixel_coords, load_map_limits
+    habitat_to_pixel_coords,
+    load_map_limits,
+    apply_semantic_highlighting
 )
 
 # Global variables
@@ -26,6 +30,14 @@ map_display: Optional[np.ndarray] = None
 original_map: Optional[np.ndarray] = None
 SCALE_FACTOR = 0.2  # Scale factor for display (same as main.py)
 floor_height = 0.0  # Will be set based on floor argument
+
+# Item highlighting variables
+selected_item_name: Optional[str] = None
+color_mapping: Dict[str, Tuple[int, int, int]] = {}  # name -> RGB color
+semantic_mapping: Dict[int, str] = {}  # semantic_id -> name
+name_to_instance_ids: Dict[str, List[int]] = {}  # name -> list of instance IDs
+pointcloud_colors: Optional[np.ndarray] = None  # For 2D map highlighting
+original_observations: Dict[str, np.ndarray] = {}  # Cache of original observations
 
 
 def update_map_display(
@@ -45,10 +57,31 @@ def update_map_display(
         image_size: Tuple of (width, height) of the map image.
         data_bounds: Optional tuple of (x_min, x_max, y_min, y_max) for actual data region.
     """
-    global map_display, original_map
+    global map_display, original_map, selected_item_name, color_mapping, pointcloud_colors
 
     # Reset to original map
     map_display = original_map.copy()
+
+    # Apply item highlighting if an item is selected
+    if selected_item_name and selected_item_name in color_mapping and pointcloud_colors is not None:
+        target_color = color_mapping[selected_item_name]
+        # Create mask for the selected item color in the original map (before scaling)
+        original_full_map = cv2.imread('map.png')
+        if original_full_map is not None:
+            # Match colors (allowing some tolerance)
+            mask = np.all(np.abs(original_full_map - target_color[::-1]) < 5, axis=2)
+            
+            # Create red overlay
+            overlay = original_full_map.copy()
+            overlay[mask] = [0, 0, 255]  # Red in BGR
+            
+            # Blend with opacity
+            highlighted_map = cv2.addWeighted(original_full_map, 0.6, overlay, 0.4, 0)
+            
+            # Resize for display
+            new_width = int(image_size[0] * SCALE_FACTOR)
+            new_height = int(image_size[1] * SCALE_FACTOR)
+            map_display = cv2.resize(highlighted_map, (new_width, new_height))
 
     # Convert agent position to pixel coordinates
     pixel_x, pixel_y = habitat_to_pixel_coords(
@@ -66,6 +99,189 @@ def update_map_display(
 
     # Update the display
     cv2.imshow('Map - Click to Teleport', map_display)
+
+
+def update_3d_views(observations: Dict[str, np.ndarray]) -> None:
+    """
+    Update all 3D view windows with highlighting if an item is selected.
+    
+    Args:
+        observations: Dictionary of sensor observations.
+    """
+    global selected_item_name, original_observations, name_to_instance_ids
+    
+    # Store original observations
+    original_observations = {
+        'rgb': transform_rgb_bgr(observations["color_sensor"]),
+        'depth': transform_depth(observations["depth_sensor"]),
+        'semantic': transform_semantic(observations["semantic_sensor"])
+    }
+    
+    if selected_item_name:
+        # Apply highlighting to all views
+        rgb_highlighted = apply_semantic_highlighting(
+            original_observations['rgb'].copy(),
+            observations["semantic_sensor"],
+            selected_item_name,
+            name_to_instance_ids,
+            is_depth=False
+        )
+        
+        depth_highlighted = apply_semantic_highlighting(
+            original_observations['depth'].copy(),
+            observations["semantic_sensor"],
+            selected_item_name,
+            name_to_instance_ids,
+            is_depth=True
+        )
+        
+        semantic_highlighted = apply_semantic_highlighting(
+            original_observations['semantic'].copy(),
+            observations["semantic_sensor"],
+            selected_item_name,
+            name_to_instance_ids,
+            is_depth=False
+        )
+        
+        cv2.imshow("RGB View", rgb_highlighted)
+        cv2.imshow("Depth View", depth_highlighted)
+        cv2.imshow("Semantic View", semantic_highlighted)
+    else:
+        # Show original views
+        cv2.imshow("RGB View", original_observations['rgb'])
+        cv2.imshow("Depth View", original_observations['depth'])
+        cv2.imshow("Semantic View", original_observations['semantic'])
+
+
+def select_item_interactive() -> Optional[str]:
+    """
+    Let user select an item from the available items interactively.
+    
+    Returns:
+        Selected item name or None if cancelled.
+    """
+    global color_mapping
+    
+    items = sorted(color_mapping.keys())
+    
+    if not items:
+        print("No items available!")
+        return None
+    
+    print("\n" + "=" * 50)
+    print("Available items to highlight:")
+    print("=" * 50)
+    for item in items:
+        print(f"  - {item}")
+    print("=" * 50)
+    
+    try:
+        choice = input("Enter item name (or 'c' to cancel): ").strip()
+        if choice.lower() == 'c':
+            return None
+        
+        # Find exact match (case-insensitive)
+        for item in items:
+            if item.lower() == choice.lower():
+                return item
+        
+        print(f"Item '{choice}' not found!")
+        return None
+    except (ValueError, KeyboardInterrupt):
+        return None
+
+
+def load_mappings(
+    mapping_file: str,
+    semantic_file: str
+) -> Tuple[Dict[str, Tuple[int, int, int]], Dict[int, str], Dict[str, List[int]]]:
+    """
+    Load color mapping from Excel and semantic mapping from JSON.
+    Only include items that exist in both 2D map (Excel) and 3D semantic data.
+    
+    Args:
+        mapping_file: Path to the Excel file with color mappings.
+        semantic_file: Path to the semantic JSON file.
+    
+    Returns:
+        Tuple of (color_mapping, semantic_mapping, name_to_instance_ids).
+        - color_mapping: Maps item names to RGB colors
+        - semantic_mapping: Maps instance IDs to class names
+        - name_to_instance_ids: Maps item names to lists of instance IDs
+    """
+    # Load color mapping from Excel (2D map items)
+    df = pd.read_excel(mapping_file)
+    color_map = {}
+    items_in_2d = set()
+    
+    for _, row in df.iterrows():
+        name = row['Name']
+        color_str = row['Color_Code (R,G,B)']
+        # Parse color string like "(120, 120, 120)"
+        color_str = color_str.strip('()')
+        r, g, b = map(int, color_str.split(','))
+        color_map[name] = (r, g, b)
+        items_in_2d.add(name)
+    
+    # Load semantic mapping from JSON (3D semantic data)
+    with open(semantic_file, 'r') as f:
+        semantic_data = json.load(f)
+    
+    # Build mapping from instance IDs to class names
+    # The semantic observation contains instance IDs, not class IDs
+    instance_to_name = {}
+    class_names_in_3d = set()
+    
+    for obj in semantic_data['objects']:
+        instance_id = obj['id']
+        class_name = obj['class_name']
+        instance_to_name[instance_id] = class_name
+        class_names_in_3d.add(class_name)
+    
+    # Build name_to_instance_ids mapping
+    # This maps class names to a list of all instance IDs with that class
+    name_to_instances = {}
+    for instance_id, class_name in instance_to_name.items():
+        if class_name not in name_to_instances:
+            name_to_instances[class_name] = []
+        name_to_instances[class_name].append(instance_id)
+    
+    # Filter to only include items that exist in both 2D and 3D
+    filtered_color_map = {}
+    name_to_semantic_id = {}
+    
+    for name in items_in_2d:
+        if name in name_to_instances:
+            filtered_color_map[name] = color_map[name]
+            # Store all instance IDs for this class name
+            name_to_semantic_id[name] = name_to_instances[name]
+    
+    print(f"Loaded {len(filtered_color_map)} items available for highlighting")
+    
+    return filtered_color_map, instance_to_name, name_to_semantic_id
+
+
+def semantic_click_callback(event: int, x: int, y: int, _flags: int, _param: Optional[object]) -> None:
+    """
+    Mouse callback function for clicking on the semantic view to see item info.
+    """
+    global simulation, semantic_mapping
+    
+    if event == cv2.EVENT_LBUTTONDOWN:
+        # Get current semantic observation
+        observations = simulation.get_sensor_observations()
+        semantic_obs = observations["semantic_sensor"]
+        
+        # Get the semantic ID at the clicked position
+        if 0 <= y < semantic_obs.shape[0] and 0 <= x < semantic_obs.shape[1]:
+            semantic_id = semantic_obs[y, x]
+            
+            # Look up the name
+            if semantic_id in semantic_mapping:
+                item_name = semantic_mapping[semantic_id]
+                print(f"Clicked: {item_name}")
+            else:
+                print(f"Clicked: Unknown (ID: {semantic_id})")
 
 
 def mouse_callback(event: int, x: int, y: int, _flags: int, _param: Optional[object]) -> None:
@@ -111,10 +327,7 @@ def mouse_callback(event: int, x: int, y: int, _flags: int, _param: Optional[obj
 
         # Get and display observations from the new position
         observations = simulation.get_sensor_observations()
-
-        cv2.imshow("RGB View", transform_rgb_bgr(observations["color_sensor"]))
-        cv2.imshow("Depth View", transform_depth(observations["depth_sensor"]))
-        cv2.imshow("Semantic View", transform_semantic(observations["semantic_sensor"]))
+        update_3d_views(observations)
 
 
 def make_simple_cfg(settings: dict) -> habitat_sim.Configuration:
@@ -169,6 +382,7 @@ def main() -> None:
     Main function for the interactive map teleportation tool.
     """
     global simulation, agent, current_position, map_limits, map_display, original_map, floor_height
+    global color_mapping, semantic_mapping, name_to_instance_ids, pointcloud_colors, selected_item_name
 
     parser = argparse.ArgumentParser(
         description='Interactive map teleportation tool for Habitat simulator'
@@ -187,7 +401,24 @@ def main() -> None:
         default='semantic_3d_pointcloud',
         help='Path to the point cloud data'
     )
+    parser.add_argument(
+        '--mapping_file', type=str,
+        default='color_coding_semantic_segmentation_classes.xlsx',
+        help='Path to the Excel file with color mappings'
+    )
+    parser.add_argument(
+        '--semantic_file', type=str,
+        default='replica_v1/apartment_0/habitat/info_semantic.json',
+        help='Path to the semantic JSON file'
+    )
     args = parser.parse_args()
+
+    # Load mappings
+    print("Loading color and semantic mappings...")
+    color_mapping, semantic_mapping, name_to_instance_ids = load_mappings(
+        args.mapping_file,
+        args.semantic_file
+    )
 
     # Set floor height based on floor number
     # For floor 1, we need to check the actual navmesh height
@@ -237,6 +468,9 @@ def main() -> None:
     map_limits = load_map_limits(args.pointcloud_path)
     x_limit, y_limit, image_size, data_bounds = map_limits
 
+    # Load pointcloud colors for 2D highlighting
+    pointcloud_colors = np.load(f'{args.pointcloud_path}/color0255.npy')
+
     # Load and display the map
     map_image = cv2.imread('map.png')
     if map_image is None:
@@ -252,22 +486,26 @@ def main() -> None:
     # Setup windows
     cv2.namedWindow('Map - Click to Teleport')
     cv2.setMouseCallback('Map - Click to Teleport', mouse_callback)
+    
+    cv2.namedWindow('Semantic View')
+    cv2.setMouseCallback('Semantic View', semantic_click_callback)
 
     # Draw initial position on map
     update_map_display(current_position, x_limit, y_limit, image_size, data_bounds)
 
     # Get initial observations
     observations = simulation.get_sensor_observations()
-    cv2.imshow("RGB View", transform_rgb_bgr(observations["color_sensor"]))
-    cv2.imshow("Depth View", transform_depth(observations["depth_sensor"]))
-    cv2.imshow("Semantic View", transform_semantic(observations["semantic_sensor"]))
+    update_3d_views(observations)
 
     print("\n" + "=" * 50)
     print("Interactive Map Teleportation Tool")
     print("=" * 50)
     print("Click anywhere on the map to teleport to that location")
+    print("Click on Semantic View to see item name")
+    print("Press 'i' to select an item to highlight")
+    print("Press 'c' to clear item highlighting")
     print("Press 'q' to quit")
-    print("Press 'w/a/s/d' to move forward/turn left/backward/turn right")
+    print("Press 'w/a/d' to move forward/turn left/turn right")
     print("=" * 50 + "\n")
 
     while True:
@@ -275,27 +513,40 @@ def main() -> None:
 
         if key == ord('q'):
             break
+        elif key == ord('i'):
+            # Select item to highlight
+            selected_item_name = select_item_interactive()
+            if selected_item_name:
+                print(f"Highlighting: {selected_item_name}")
+                # Update all views with highlighting
+                update_map_display(current_position, x_limit, y_limit, image_size, data_bounds)
+                observations = simulation.get_sensor_observations()
+                update_3d_views(observations)
+            else:
+                print("No item selected")
+        elif key == ord('c'):
+            # Clear highlighting
+            selected_item_name = None
+            print("Cleared item highlighting")
+            # Update all views without highlighting
+            update_map_display(current_position, x_limit, y_limit, image_size, data_bounds)
+            observations = simulation.get_sensor_observations()
+            update_3d_views(observations)
         elif key == ord('w'):
             observations = simulation.step("move_forward")
             agent_state = agent.get_state()
             current_position = agent_state.position
             # Update map with new position
             update_map_display(current_position, x_limit, y_limit, image_size, data_bounds)
-            cv2.imshow("RGB View", transform_rgb_bgr(observations["color_sensor"]))
-            cv2.imshow("Depth View", transform_depth(observations["depth_sensor"]))
-            cv2.imshow("Semantic View", transform_semantic(observations["semantic_sensor"]))
+            update_3d_views(observations)
         elif key == ord('a'):
             observations = simulation.step("turn_left")
             # Turning doesn't change position, but update views
-            cv2.imshow("RGB View", transform_rgb_bgr(observations["color_sensor"]))
-            cv2.imshow("Depth View", transform_depth(observations["depth_sensor"]))
-            cv2.imshow("Semantic View", transform_semantic(observations["semantic_sensor"]))
+            update_3d_views(observations)
         elif key == ord('d'):
             observations = simulation.step("turn_right")
             # Turning doesn't change position, but update views
-            cv2.imshow("RGB View", transform_rgb_bgr(observations["color_sensor"]))
-            cv2.imshow("Depth View", transform_depth(observations["depth_sensor"]))
-            cv2.imshow("Semantic View", transform_semantic(observations["semantic_sensor"]))
+            update_3d_views(observations)
 
     cv2.destroyAllWindows()
     simulation.close()

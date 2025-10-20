@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, List
 
 import cv2
 import numpy as np
@@ -222,3 +222,53 @@ def load_map_limits(
     data_bounds = calculate_data_bounds(map_image_path)
 
     return x_limit, y_limit, image_size, data_bounds
+
+
+def apply_semantic_highlighting(
+    image: np.ndarray,
+    semantic_observation: np.ndarray,
+    item_name: str,
+    name_to_instance_ids: Dict[str, List[int]],
+    is_depth: bool = False
+) -> np.ndarray:
+    """
+    Apply red mask highlighting to areas matching the selected item in the image.
+
+    Args:
+        image: The image to highlight (RGB, Depth, or Semantic).
+        semantic_observation: The semantic observation array.
+        item_name: Name of the item to highlight.
+        name_to_instance_ids: Mapping from item names to lists of instance IDs.
+        is_depth: Whether this is a depth image (single channel).
+
+    Returns:
+        Highlighted image.
+    """
+    if item_name not in name_to_instance_ids:
+        return image
+
+    # Get all instance IDs for this item class
+    instance_ids = name_to_instance_ids[item_name]
+
+    # Create mask for all instances of the selected item
+    mask = np.zeros(semantic_observation.shape, dtype=bool)
+    for instance_id in instance_ids:
+        mask |= (semantic_observation == instance_id)
+
+    # Create overlay
+    if is_depth:
+        # For depth, convert to 3-channel for overlay
+        if len(image.shape) == 2:
+            image_3ch = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        else:
+            image_3ch = image.copy()
+        overlay = image_3ch.copy()
+        overlay[mask] = [0, 0, 255]  # Red in BGR
+        highlighted = cv2.addWeighted(image_3ch, 0.6, overlay, 0.4, 0)
+        return highlighted
+    else:
+        # For RGB and semantic
+        overlay = image.copy()
+        overlay[mask] = [0, 0, 255]  # Red in BGR
+        highlighted = cv2.addWeighted(image, 0.6, overlay, 0.4, 0)
+        return highlighted
