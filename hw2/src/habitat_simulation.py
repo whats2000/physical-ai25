@@ -263,27 +263,24 @@ def navigate_path(
             if action_count % render_interval == 0:
                 observations = sim.get_sensor_observations()
 
-                # Highlight target in semantic view
+                # Get RGB image and semantic observation
+                rgb_image = transform_rgb_bgr(observations["color_sensor"])
                 semantic_obs = observations["semantic_sensor"]
-                highlighted_semantic = apply_semantic_highlighting(
-                    transform_semantic(semantic_obs),
+
+                # Highlight target item in RGB view (same as interactive tool)
+                rgb_highlighted = apply_semantic_highlighting(
+                    rgb_image.copy(),
                     semantic_obs,
                     target_name,
                     name_to_instance_ids,
                     is_depth=False
                 )
 
-                # Get RGB image
-                rgb_image = transform_rgb_bgr(observations["color_sensor"])
-
-                # Combine RGB and highlighted semantic for visualization
-                combined = cv2.addWeighted(rgb_image, 0.7, highlighted_semantic, 0.3, 0)
-
                 # Write frame to video
-                video_writer.write(combined)
+                video_writer.write(rgb_highlighted)
 
                 # Display in window
-                cv2.imshow('Navigation', combined)
+                cv2.imshow('Navigation', rgb_highlighted)
 
                 # Update 2D map with current position and navigation info
                 map_display = map_with_path.copy()
