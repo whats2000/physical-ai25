@@ -6,6 +6,7 @@ import pandas as pd
 
 from src.path_finding import RRTPathFinder, find_target_points_on_map, draw_path_on_map
 from src.semetic_map_construction import remove_items_by_color, remove_top_and_bottom, save_semantic_map
+from src.habitat_simulation import navigate_path
 
 SCALE_FACTOR = 0.2
 ROBOT_RADIUS = 10.0
@@ -190,3 +191,9 @@ if __name__ == '__main__':
     cv2.destroyAllWindows()
     
     print("=" * 50)
+    print("Starting Habitat navigation simulation...")
+    navigate_path(
+        path=path,
+        target_name=selected_target['Name'],
+        pointcloud_path=args.pointcloud_path
+    )
