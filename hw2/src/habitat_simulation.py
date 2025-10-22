@@ -1,3 +1,4 @@
+import os
 from typing import List, Tuple, Dict
 
 import cv2
@@ -170,7 +171,7 @@ def navigate_path(
     agent.set_state(agent_state)
 
     # Initialize video writer
-    video_path.mkdir(parents=True, exist_ok=True)
+    os.makedirs(video_path, exist_ok=True)
     video_filename = f"{video_path}/{target_name}.mp4"
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video_writer = cv2.VideoWriter(video_filename, fourcc, video_fps, (512, 512))
