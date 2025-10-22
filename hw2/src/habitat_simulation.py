@@ -10,7 +10,6 @@ from src.map_utils import (
     load_map_limits,
     apply_semantic_highlighting,
     transform_rgb_bgr,
-    transform_semantic, habitat_to_pixel_coords
 )
 
 
@@ -178,21 +177,6 @@ def navigate_path(
 
     # Create window for display
     cv2.namedWindow('Navigation', cv2.WINDOW_NORMAL)
-    cv2.namedWindow('2D Map', cv2.WINDOW_NORMAL)
-
-    # Load and prepare 2D map for visualization
-    map_2d = cv2.imread('map.png')
-    if map_2d is None:
-        print("Warning: Could not load map.png for 2D visualization")
-        map_2d = np.ones((500, 500, 3), dtype=np.uint8) * 255
-    
-    # Draw the planned path on the map
-    map_with_path = map_2d.copy()
-    for i in range(len(path) - 1):
-        cv2.line(map_with_path, path[i], path[i+1], (255, 0, 0), 2)  # Blue path
-    # Mark start and end
-    cv2.circle(map_with_path, path[0], 8, (0, 255, 0), -1)  # Green start
-    cv2.circle(map_with_path, path[-1], 8, (0, 0, 255), -1)  # Red end
 
     print(f"Starting navigation to {target_name}")
     print(f"Saving video to {video_filename}")
@@ -202,15 +186,15 @@ def navigate_path(
     action_count = 0
 
     for i, (target_x, target_z) in enumerate(habitat_path[1:], 1):
-        print(f"Navigating to waypoint {i}/{len(habitat_path)-1}")
+        print(f"Navigating to waypoint {i}/{len(habitat_path) - 1}")
 
         waypoint_reached = False
         max_attempts = 500  # Prevent infinite loops
         attempts = 0
-        
+
         while not waypoint_reached and attempts < max_attempts:
             attempts += 1
-            
+
             # Get current position and rotation
             agent_state = agent.get_state()
             current_pos = agent_state.position
@@ -220,12 +204,11 @@ def navigate_path(
             # Calculate direction vector to target (in Habitat coordinates)
             dx = target_x - current_x  # X component (right)
             dz = target_z - current_z  # Z component (forward)
-            distance = np.sqrt(dx**2 + dz**2)
+            distance = np.sqrt(dx ** 2 + dz ** 2)
 
             # Check if reached waypoint - tighter threshold for more precise navigation
             if distance < forward_amount * 0.8:  # Threshold: 0.8x forward amount
                 print(f"[INFO] Reached waypoint {i} (distance: {distance:.2f}m)")
-                waypoint_reached = True
                 break
 
             # Extract yaw from quaternion (rotation around Y-axis)
@@ -233,7 +216,7 @@ def navigate_path(
                 w, x, y, z = current_rotation.components
             else:
                 w, x, y, z = current_rotation.w, current_rotation.x, current_rotation.y, current_rotation.z
-            
+
             # Yaw angle: rotation around Y-axis
             current_yaw = np.arctan2(2.0 * (w * y + x * z), 1.0 - 2.0 * (y * y + x * x))
 
@@ -247,7 +230,7 @@ def navigate_path(
 
             # Decide action based on angle difference
             turn_threshold = np.deg2rad(turn_amount)
-            
+
             if abs(angle_diff) > turn_threshold:
                 # Need to turn - use sign of angle_diff to determine direction
                 if angle_diff > 0:
@@ -281,42 +264,6 @@ def navigate_path(
 
                 # Display in window
                 cv2.imshow('Navigation', rgb_highlighted)
-
-                # Update 2D map with current position and navigation info
-                map_display = map_with_path.copy()
-
-                # Draw all waypoints
-                for j, (wp_x, wp_y) in enumerate(path):
-                    if j < i:
-                        # Completed waypoints - green
-                        cv2.circle(map_display, (wp_x, wp_y), 4, (0, 255, 0), -1)
-                    elif j == i:
-                        # Current target waypoint - yellow with outline
-                        cv2.circle(map_display, (wp_x, wp_y), 8, (0, 255, 255), -1)
-                        cv2.circle(map_display, (wp_x, wp_y), 10, (255, 255, 255), 2)
-                    else:
-                        # Future waypoints - small circles
-                        cv2.circle(map_display, (wp_x, wp_y), 3, (200, 200, 200), -1)
-
-                # Draw current agent position
-                current_pixel_x, current_pixel_y = habitat_to_pixel_coords(
-                    current_x, current_z, x_limit, y_limit, image_size, data_bounds
-                )
-                cv2.circle(map_display, (current_pixel_x, current_pixel_y), 6, (255, 0, 0), -1)  # Blue agent
-                cv2.circle(map_display, (current_pixel_x, current_pixel_y), 9, (255, 255, 255), 2)  # White outline
-
-                # Draw line from agent to current target
-                target_pixel_x, target_pixel_y = path[i]
-                cv2.line(map_display, (current_pixel_x, current_pixel_y),
-                        (target_pixel_x, target_pixel_y), (0, 255, 0), 1)  # Green line
-
-                # Add text info
-                cv2.putText(map_display, f"Waypoint: {i}/{len(path)-1}", (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                cv2.putText(map_display, f"Distance: {distance:.2f}m", (10, 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-                cv2.imshow('2D Map', map_display)
 
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
