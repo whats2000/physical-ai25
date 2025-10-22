@@ -1,11 +1,12 @@
 import argparse
 import json
-from typing import Tuple, Optional, Dict, List
+from typing import Tuple, Optional, Dict, List, Union
 
 import cv2
 import habitat_sim
 import numpy as np
 import pandas as pd
+import quaternion as qt
 
 from src.map_utils import (
     transform_semantic,
@@ -21,6 +22,7 @@ from src.map_utils import (
 simulation: Optional[habitat_sim.Simulator] = None
 agent: Optional[habitat_sim.Agent] = None
 current_position: Optional[np.ndarray] = None
+current_rotation: Optional[Union[qt.quaternion, List, np.ndarray]] = None
 map_limit: Optional[
     Tuple[Tuple[float, float],  # x_limit
     Tuple[float, float],  # y_limit
@@ -41,6 +43,29 @@ pointcloud_colors: Optional[np.ndarray] = None  # For 2D map highlighting
 original_observations: Dict[str, np.ndarray] = {}  # Cache of original observations
 
 
+def quaternion_to_yaw(rotation: Optional[Union[qt.quaternion, List, np.ndarray]]) -> float:
+    """
+    Convert a quaternion to yaw angle (rotation around Y-axis).
+    
+    Args:
+        rotation: Quaternion object from habitat_sim (quaternion.quaternion).
+    
+    Returns:
+        Yaw angle in radians.
+    """
+    # Extract quaternion components
+    if hasattr(rotation, 'components'):
+        w, x, y, z = rotation.components
+    else:
+        x, y, z, w = rotation
+
+    # Calculate yaw (rotation around Y-axis)
+    # yaw = atan2(2*(w*y + x*z), 1 - 2*(y^2 + x^2))
+    yaw = np.arctan2(2.0 * (w * y + x * z), 1.0 - 2.0 * (y * y + x * x))
+
+    return yaw
+
+
 def update_map_display(
     position: np.ndarray,
     x_limit: Tuple[float, float],
@@ -49,7 +74,7 @@ def update_map_display(
     data_bounds: Optional[Tuple[float, float, float, float]]
 ) -> None:
     """
-    Update the map display with the current agent position.
+    Update the map display with the current agent position and facing direction.
     
     Args:
         position: Agent's current position as (x, y, z).
@@ -58,7 +83,7 @@ def update_map_display(
         image_size: Tuple of (width, height) of the map image.
         data_bounds: Optional tuple of (x_min, x_max, y_min, y_max) for actual data region.
     """
-    global map_display, original_map, selected_item_name, color_mapping, pointcloud_colors
+    global map_display, original_map, selected_item_name, color_mapping, pointcloud_colors, current_rotation
 
     # Reset to original map
     map_display = original_map.copy()
@@ -97,6 +122,49 @@ def update_map_display(
     # Draw agent position (blue dot with white outline)
     cv2.circle(map_display, (scaled_x, scaled_y), 5, (255, 0, 0), -1)  # Blue dot
     cv2.circle(map_display, (scaled_x, scaled_y), 8, (255, 255, 255), 2)  # White outline
+
+    # Draw facing direction arrow
+    if current_rotation is not None:
+        # Get yaw angle from quaternion
+        yaw = quaternion_to_yaw(current_rotation)
+
+        """
+        In Habitat: +Z is forward initially, yaw rotates around Y-axis
+        In 2D map: X-axis is habitat Z, Y-axis is habitat X (with Y inverted)
+        When yaw=0: agent faces +Z direction (right on 2D map)
+        Positive yaw rotates counter-clockwise around Y-axis
+        """
+        # Calculate arrow endpoint
+        arrow_length = 30  # pixels
+        # Map yaw to 2D: need to add 180 degrees (pi) to flip direction
+        # and negate dy because image Y is inverted
+        arrow_dx = arrow_length * np.cos(yaw + np.pi)
+        arrow_dy = -arrow_length * np.sin(yaw + np.pi)  # Negative because image Y is inverted
+
+        end_x = int(scaled_x + arrow_dx)
+        end_y = int(scaled_y + arrow_dy)
+
+        # Draw arrow
+        cv2.arrowedLine(
+            map_display,
+            (scaled_x, scaled_y),
+            (end_x, end_y),
+            color=(0, 255, 0),   # Green arrow
+            thickness=3,
+            tipLength=0.3
+        )
+
+        # Draw text showing yaw angle
+        yaw_degrees = np.degrees(yaw)
+        text = f"Yaw: {yaw_degrees:.1f}°"
+        cv2.putText(
+            map_display, text, (scaled_x + 15, scaled_y - 15),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2
+        )
+        cv2.putText(
+            map_display, text, (scaled_x + 15, scaled_y - 15),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1
+        )
 
     # Update the display
     cv2.imshow('Map - Click to Teleport', map_display)
@@ -298,7 +366,7 @@ def mouse_callback(event: int, x: int, y: int, _flags: int, _param: Optional[obj
     """
     Mouse callback function for clicking on the map to teleport.
     """
-    global simulation, agent, current_position, map_limits, map_display, original_map, floor_height
+    global simulation, agent, current_position, current_rotation, map_limits, map_display, original_map, floor_height
 
     if event == cv2.EVENT_LBUTTONDOWN:
         # Scale coordinates back to original map size
@@ -325,12 +393,14 @@ def mouse_callback(event: int, x: int, y: int, _flags: int, _param: Optional[obj
                 print("Error: Could not find any navigable point!")
                 return
 
-        # Teleport agent to the snapped position
+        # Teleport agent to the snapped position (preserve rotation)
         agent_state = habitat_sim.AgentState()
         agent_state.position = snapped_position
+        agent_state.rotation = current_rotation if current_rotation is not None else agent.get_state().rotation
         agent.set_state(agent_state)
 
         current_position = snapped_position
+        current_rotation = agent_state.rotation
 
         # Update the map display with the current position
         update_map_display(current_position, x_limit, y_limit, image_size, data_bounds)
@@ -391,7 +461,7 @@ def main() -> None:
     """
     Main function for the interactive map teleportation tool.
     """
-    global simulation, agent, current_position, map_limits, map_display, original_map, floor_height
+    global simulation, agent, current_position, current_rotation, map_limits, map_display, original_map, floor_height
     global color_mapping, semantic_mapping, name_to_instance_ids, pointcloud_colors, selected_item_name
 
     parser = argparse.ArgumentParser(
@@ -473,6 +543,7 @@ def main() -> None:
     agent_state.position = np.array([0.0, floor_height, 0.0])
     agent.set_state(agent_state)
     current_position = agent_state.position
+    current_rotation = agent.get_state().rotation
 
     # Load map limits
     map_limits = load_map_limits(args.pointcloud_path)
@@ -546,16 +617,23 @@ def main() -> None:
             observations = simulation.step("move_forward")
             agent_state = agent.get_state()
             current_position = agent_state.position
+            current_rotation = agent_state.rotation
             # Update map with new position
             update_map_display(current_position, x_limit, y_limit, image_size, data_bounds)
             update_3d_views(observations)
         elif key == ord('a'):
             observations = simulation.step("turn_left")
-            # Turning doesn't change position, but update views
+            agent_state = agent.get_state()
+            current_rotation = agent_state.rotation
+            # Turning changes rotation, update views and map
+            update_map_display(current_position, x_limit, y_limit, image_size, data_bounds)
             update_3d_views(observations)
         elif key == ord('d'):
             observations = simulation.step("turn_right")
-            # Turning doesn't change position, but update views
+            agent_state = agent.get_state()
+            current_rotation = agent_state.rotation
+            # Turning changes rotation, update views and map
+            update_map_display(current_position, x_limit, y_limit, image_size, data_bounds)
             update_3d_views(observations)
 
     cv2.destroyAllWindows()
