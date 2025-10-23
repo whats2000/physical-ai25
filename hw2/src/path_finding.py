@@ -88,9 +88,14 @@ class RRTPathFinder:
             for dy in range(-check_radius, check_radius + 1):
                 check_x = x + dx
                 check_y = y + dy
-                if 0 <= check_x < self.map_width and 0 <= check_y < self.map_height:
-                    if self.occupancy_map[check_y, check_x] == 0:
-                        return False
+
+                if (0 > check_x or check_x >= self.map_width) or (0 > check_y or check_y >= self.map_height):
+                    # Skip out-of-bounds
+                    continue
+
+                if self.occupancy_map[check_y, check_x] == 0:
+                    # If any point in the area is occupied, return False
+                    return False
 
         return True
 
@@ -175,23 +180,25 @@ class RRTPathFinder:
         if len(path) <= 2:
             return path
 
-        simplified = [path[0]]
-        current_idx = 0
+        simplified_path = [path[0]]
+        current_index = 0
 
-        while current_idx < len(path) - 1:
-            # Find the furthest point we can reach directly from current_idx
-            furthest_idx = current_idx + 1
-            for candidate_idx in range(current_idx + 2, len(path)):
-                if self._is_path_collision_free(np.array(path[current_idx]), np.array(path[candidate_idx])):
-                    furthest_idx = candidate_idx
-                else:
+        while current_index < len(path) - 1:
+            # Find the furthest point we can reach directly from current_index
+            furthest_index = current_index + 1
+            for candidate_index in range(current_index + 2, len(path)):
+                if not self._is_path_collision_free(np.array(path[current_index]), np.array(path[candidate_index])):
+                    # When we hit a collision, stop checking further
                     break
 
-            # Add the furthest reachable point
-            simplified.append(path[furthest_idx])
-            current_idx = furthest_idx
+                # Update the furthest reachable index
+                furthest_index = candidate_index
 
-        return simplified
+            # Add the furthest reachable point
+            simplified_path.append(path[furthest_index])
+            current_index = furthest_index
+
+        return simplified_path
 
     def find_path(
         self,
@@ -346,8 +353,6 @@ def find_target_points_on_map(
         return []
 
     print(f"Found {len(valid_instances)} target instance(s)")
-    for idx, (cx, cy, area) in enumerate(valid_instances):
-        print(f"  Instance {idx + 1}: center=({cx}, {cy}), area={area} pixels")
 
     # Create occupancy map with safety margin
     gray = cv2.cvtColor(map_image, cv2.COLOR_BGR2GRAY)
@@ -360,20 +365,20 @@ def find_target_points_on_map(
     def is_far_enough_from_existing(
         new_point: Tuple[int, int],
         existing_points: List[Tuple[int, int]],
-        min_dist: int
+        min_distance: int
     ) -> bool:
         """
         Check if new point is far enough from all existing points.
         Args:
             new_point: The new point to check.
             existing_points: List of existing points.
-            min_dist: Minimum required distance.
+            min_distance: Minimum required distance.
         Returns:
             True if far enough, False otherwise.
         """
-        for ex_x, ex_y in existing_points:
-            dist = np.sqrt((new_point[0] - ex_x) ** 2 + (new_point[1] - ex_y) ** 2)
-            if dist < min_dist:
+        for existing_x, existing_y in existing_points:
+            distance = np.sqrt((new_point[0] - existing_x) ** 2 + (new_point[1] - existing_y) ** 2)
+            if distance < min_distance:
                 return False
         return True
 
@@ -384,20 +389,24 @@ def find_target_points_on_map(
     # Calculate max points per instance (distribute evenly)
     max_points_per_instance = max(1, max_points // len(valid_instances))
 
-    for instance_idx, (center_x, center_y, area) in enumerate(valid_instances):
+    # For each valid target instance, find feasible points around it
+    for instance_index, (center_x, center_y, area) in enumerate(valid_instances):
         instance_candidate_points = []
 
         # Try different directions and distances around this instance
-        for distance_mult in [1.0, 1.5, 2.0, 0.7, 2.5]:
-            current_offset = int(offset_distance * distance_mult)
+        # Because too close points may be unsafe, we try a little away first!
+        for distance_multiplier in [1.0, 1.5, 2.0, 0.7, 2.5]:
+            current_offset = int(offset_distance * distance_multiplier)
 
             # Generate candidate directions in a circular pattern
-            num_directions = 24  # More directions for better coverage
+            num_directions = 24  # More directions for better coverage (Try every 15 degrees)
             for i in range(num_directions):
+                # Calculate vector direction
                 angle = 2 * np.pi * i / num_directions
                 dx = int(current_offset * np.cos(angle))
                 dy = int(current_offset * np.sin(angle))
 
+                # Calculate new candidate point
                 new_x = center_x + dx
                 new_y = center_y + dy
 
@@ -431,8 +440,8 @@ def find_target_points_on_map(
 
                 if is_safe:
                     # Add to candidate points with distance from center for sorting
-                    dist_from_center = np.sqrt((new_x - center_x) ** 2 + (new_y - center_y) ** 2)
-                    instance_candidate_points.append((new_x, new_y, dist_from_center))
+                    distance_from_center = np.sqrt((new_x - center_x) ** 2 + (new_y - center_y) ** 2)
+                    instance_candidate_points.append((new_x, new_y, distance_from_center))
 
         # Sort candidates by distance from center
         instance_candidate_points.sort(key=lambda p: p[2])
@@ -450,16 +459,18 @@ def find_target_points_on_map(
             if not is_far_enough_from_existing(point, all_feasible_points, min_point_separation):
                 continue
 
+            # Add this point as feasible
             instance_feasible_points.append(point)
 
             if len(instance_feasible_points) >= max_points_per_instance:
+                # When we have enough points for this instance, stop adding more
                 break
 
         # Add this instance's feasible points to the global list
         all_feasible_points.extend(instance_feasible_points)
 
         if instance_feasible_points:
-            print(f"  Instance {instance_idx + 1}: Found {len(instance_feasible_points)} goal points")
+            print(f"  Instance {instance_index + 1}: Found {len(instance_feasible_points)} goal points")
 
         # Stop if we've reached the overall max
         if len(all_feasible_points) >= max_points:
@@ -471,38 +482,6 @@ def find_target_points_on_map(
         print(f"Total: {len(all_feasible_points)} well-separated feasible goal points across all instances")
         print(f"(Minimum separation: {min_point_separation} pixels)")
         return all_feasible_points
-
-    # Fallback: find nearest safe points from free space with separation constraint
-    # Use the first (largest) instance as reference
-    print("Using fallback: finding nearest safe points from free space")
-    center_x, center_y, _ = valid_instances[0]
-
-    free_coords = np.where(safe_occupancy == 1)
-    if len(free_coords[0]) > 0:
-        distances = np.sqrt((free_coords[1] - center_x) ** 2 + (free_coords[0] - center_y) ** 2)
-        # Sort by distance
-        sorted_indices = np.argsort(distances)
-
-        fallback_points = []
-        for idx in sorted_indices:
-            goal_x = int(free_coords[1][idx])
-            goal_y = int(free_coords[0][idx])
-            candidate = (goal_x, goal_y)
-
-            # Check separation from existing fallback points
-            if not is_far_enough_from_existing(candidate, fallback_points, min_point_separation):
-                continue
-
-            # Only add if far enough from existing points
-            fallback_points.append(candidate)
-
-            if len(fallback_points) >= max_points:
-                # We have enough points, so stop
-                break
-
-        if fallback_points:
-            print(f"Found {len(fallback_points)} well-separated fallback goal points")
-            return fallback_points
 
     # There are no safe points found
     print("No safe goal points found around the target!")
