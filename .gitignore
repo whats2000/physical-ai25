@@ -12,3 +12,5 @@ hw2/occupancy_map.png
 /hw2/results/habitat_visualization
 /hw2/results
 hw2/simplified_path_map.png
+habitat-sim
+*.docx
