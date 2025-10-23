@@ -185,7 +185,7 @@ class RRTPathFinder:
         if not valid_goal_points:
             print(f"No valid collision-free goal points!")
             return None
-        
+
         print(f"Path finding with {len(valid_goal_points)} valid goal points")
 
         # Initialize tree
@@ -311,7 +311,7 @@ def find_target_points_on_map(
             True if far enough, False otherwise.
         """
         for ex_x, ex_y in existing_points:
-            dist = np.sqrt((new_point[0] - ex_x)**2 + (new_point[1] - ex_y)**2)
+            dist = np.sqrt((new_point[0] - ex_x) ** 2 + (new_point[1] - ex_y) ** 2)
             if dist < min_dist:
                 return False
         return True
@@ -319,18 +319,18 @@ def find_target_points_on_map(
     # Collect multiple feasible target points with good separation
     feasible_points = []
     candidate_points = []
-    
+
     # Try different directions and distances around the target
     for distance_mult in [1.0, 1.5, 2.0, 0.7, 2.5]:
         current_offset = int(offset_distance * distance_mult)
-        
+
         # Generate more candidate directions in a circular pattern
-        num_directions = 24  # Increased for better coverage
+        num_directions = 24 # More directions for better coverage
         for i in range(num_directions):
             angle = 2 * np.pi * i / num_directions
             dx = int(current_offset * np.cos(angle))
             dy = int(current_offset * np.sin(angle))
-            
+
             new_x = center_x + dx
             new_y = center_y + dy
 
@@ -364,12 +364,12 @@ def find_target_points_on_map(
 
             if is_safe:
                 # Add to candidate points with distance from center for sorting
-                dist_from_center = np.sqrt((new_x - center_x)**2 + (new_y - center_y)**2)
+                dist_from_center = np.sqrt((new_x - center_x) ** 2 + (new_y - center_y) ** 2)
                 candidate_points.append((new_x, new_y, dist_from_center))
-    
+
     # Sort candidates by distance from center
     candidate_points.sort(key=lambda p: p[2])
-    
+
     # Select well-separated points from candidates
     for candidate in candidate_points:
         point = (candidate[0], candidate[1])
@@ -389,7 +389,7 @@ def find_target_points_on_map(
         print(f"Found {len(feasible_points)} well-separated feasible goal points around target")
         print(f"(Minimum separation: {min_point_separation} pixels)")
         return feasible_points
-    
+
     # Fallback: find nearest safe points from free space with separation constraint
     print("Using fallback: finding nearest safe points from free space")
     free_coords = np.where(safe_occupancy == 1)
@@ -397,7 +397,7 @@ def find_target_points_on_map(
         distances = np.sqrt((free_coords[1] - center_x) ** 2 + (free_coords[0] - center_y) ** 2)
         # Sort by distance
         sorted_indices = np.argsort(distances)
-        
+
         fallback_points = []
         for idx in sorted_indices:
             goal_x = int(free_coords[1][idx])
@@ -474,7 +474,7 @@ def draw_path_on_map(
     for goal in goals:
         if goal == reached_goal:
             # Draw the reached goal in light blue (larger)
-            cv2.circle(result_image, goal, 15, (255, 200, 0), -1) # Light Blue
+            cv2.circle(result_image, goal, 15, (255, 200, 0), -1)  # Light Blue
         else:
             # Draw candidate goals in light blue (smaller)
             cv2.circle(result_image, goal, 10, (255, 200, 0), 2)  # Light Blue (Hollow)
