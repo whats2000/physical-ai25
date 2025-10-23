@@ -208,6 +208,9 @@ def navigate_path(
             # Check if reached waypoint - tighter threshold for more precise navigation
             if distance < forward_amount * 0.8:  # Threshold: 0.8x forward amount
                 print(f"[INFO] Reached waypoint {i} (distance: {distance:.2f}m)")
+
+                # Wait for few seconds at the waypoint
+                cv2.waitKey(2000)
                 break
 
             # Extract yaw from quaternion (rotation around Y-axis)
