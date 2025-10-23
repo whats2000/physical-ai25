@@ -174,10 +174,10 @@ class RRTPathFinder:
         """
         if len(path) <= 2:
             return path
-        
+
         simplified = [path[0]]
         current_idx = 0
-        
+
         while current_idx < len(path) - 1:
             # Find the furthest point we can reach directly from current_idx
             furthest_idx = current_idx + 1
@@ -186,11 +186,11 @@ class RRTPathFinder:
                     furthest_idx = candidate_idx
                 else:
                     break
-            
+
             # Add the furthest reachable point
             simplified.append(path[furthest_idx])
             current_idx = furthest_idx
-        
+
         return simplified
 
     def find_path(
@@ -283,10 +283,10 @@ class RRTPathFinder:
 
                 # Extract path
                 path = self._extract_path(goal_node)
-                
+
                 # Simplify the path by removing unnecessary waypoints
                 simplified_path = self._simplify_path(path)
-                
+
                 print(f"Path found in {iteration + 1} iterations with {len(path)} waypoints")
                 print(f"Simplified to {len(simplified_path)} waypoints")
                 print(f"Reached goal at {tuple(goal_point.astype(int))}")
@@ -305,6 +305,7 @@ def find_target_points_on_map(
 ) -> List[Tuple[int, int]]:
     """
     Find multiple well-distributed safe points around the target item for better path planning.
+    Handles multiple instances of the target object by detecting separate clusters.
     
     Args:
         map_image: The semantic map image.
@@ -326,10 +327,27 @@ def find_target_points_on_map(
         print(f"Target color {target_color} not found on map!")
         return []
 
-    # Calculate centroid
-    center_y = int(np.mean(target_coords[0]))
-    center_x = int(np.mean(target_coords[1]))
-    print(f"Target found at ({center_x}, {center_y})")
+    # Use connected components to find separate instances of the target
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+
+    # Filter out background (label 0) and small noise components
+    min_component_size = 20  # Minimum pixels for a valid target instance
+    valid_instances = []
+
+    for i in range(1, num_labels):  # Skip background (0)
+        area = stats[i, cv2.CC_STAT_AREA]
+        if area >= min_component_size:
+            center_x = int(centroids[i][0])
+            center_y = int(centroids[i][1])
+            valid_instances.append((center_x, center_y, area))
+
+    if not valid_instances:
+        print(f"No valid target instances found!")
+        return []
+
+    print(f"Found {len(valid_instances)} target instance(s)")
+    for idx, (cx, cy, area) in enumerate(valid_instances):
+        print(f"  Instance {idx + 1}: center=({cx}, {cy}), area={area} pixels")
 
     # Create occupancy map with safety margin
     gray = cv2.cvtColor(map_image, cv2.COLOR_BGR2GRAY)
@@ -360,81 +378,105 @@ def find_target_points_on_map(
         return True
 
     # Collect multiple feasible target points with good separation
-    feasible_points = []
-    candidate_points = []
+    # Process each target instance separately
+    all_feasible_points = []
 
-    # Try different directions and distances around the target
-    for distance_mult in [1.0, 1.5, 2.0, 0.7, 2.5]:
-        current_offset = int(offset_distance * distance_mult)
+    # Calculate max points per instance (distribute evenly)
+    max_points_per_instance = max(1, max_points // len(valid_instances))
 
-        # Generate more candidate directions in a circular pattern
-        num_directions = 24 # More directions for better coverage
-        for i in range(num_directions):
-            angle = 2 * np.pi * i / num_directions
-            dx = int(current_offset * np.cos(angle))
-            dy = int(current_offset * np.sin(angle))
+    for instance_idx, (center_x, center_y, area) in enumerate(valid_instances):
+        instance_candidate_points = []
 
-            new_x = center_x + dx
-            new_y = center_y + dy
+        # Try different directions and distances around this instance
+        for distance_mult in [1.0, 1.5, 2.0, 0.7, 2.5]:
+            current_offset = int(offset_distance * distance_mult)
 
-            # Check if within the map bounds
-            if (0 > new_x or new_x >= safe_occupancy.shape[1]) or (0 > new_y or new_y >= safe_occupancy.shape[0]):
-                continue
+            # Generate candidate directions in a circular pattern
+            num_directions = 24  # More directions for better coverage
+            for i in range(num_directions):
+                angle = 2 * np.pi * i / num_directions
+                dx = int(current_offset * np.cos(angle))
+                dy = int(current_offset * np.sin(angle))
 
-            # Check if the new point is in free space
-            if safe_occupancy[new_y, new_x] != 1:
-                continue
+                new_x = center_x + dx
+                new_y = center_y + dy
 
-            # Check surrounding area for safety
-            is_safe = True
-            for check_dx in range(-5, 6):
-                for check_dy in range(-5, 6):
-                    check_x = new_x + check_dx
-                    check_y = new_y + check_dy
+                # Check if within the map bounds
+                if (0 > new_x or new_x >= safe_occupancy.shape[1]) or (0 > new_y or new_y >= safe_occupancy.shape[0]):
+                    continue
 
-                    # Check bounds
-                    if (0 > check_x or check_x >= safe_occupancy.shape[1]) or (
-                        0 > check_y or check_y >= safe_occupancy.shape[0]):
-                        continue
+                # Check if the new point is in free space
+                if safe_occupancy[new_y, new_x] != 1:
+                    continue
 
-                    # Check occupancy
-                    if safe_occupancy[check_y, check_x] == 0:
-                        is_safe = False
+                # Check surrounding area for safety
+                is_safe = True
+                for check_dx in range(-5, 6):
+                    for check_dy in range(-5, 6):
+                        check_x = new_x + check_dx
+                        check_y = new_y + check_dy
+
+                        # Check bounds
+                        if (0 > check_x or check_x >= safe_occupancy.shape[1]) or (
+                            0 > check_y or check_y >= safe_occupancy.shape[0]):
+                            continue
+
+                        # Check occupancy
+                        if safe_occupancy[check_y, check_x] == 0:
+                            is_safe = False
+                            break
+
+                    if not is_safe:
                         break
 
-                if not is_safe:
-                    break
+                if is_safe:
+                    # Add to candidate points with distance from center for sorting
+                    dist_from_center = np.sqrt((new_x - center_x) ** 2 + (new_y - center_y) ** 2)
+                    instance_candidate_points.append((new_x, new_y, dist_from_center))
 
-            if is_safe:
-                # Add to candidate points with distance from center for sorting
-                dist_from_center = np.sqrt((new_x - center_x) ** 2 + (new_y - center_y) ** 2)
-                candidate_points.append((new_x, new_y, dist_from_center))
+        # Sort candidates by distance from center
+        instance_candidate_points.sort(key=lambda p: p[2])
 
-    # Sort candidates by distance from center
-    candidate_points.sort(key=lambda p: p[2])
+        # Select well-separated points from this instance's candidates
+        instance_feasible_points = []
+        for candidate in instance_candidate_points:
+            point = (candidate[0], candidate[1])
 
-    # Select well-separated points from candidates
-    for candidate in candidate_points:
-        point = (candidate[0], candidate[1])
+            # Check separation from points within this instance
+            if not is_far_enough_from_existing(point, instance_feasible_points, min_point_separation):
+                continue
 
-        # If the point is not far enough from existing feasible points, skip it
-        if not is_far_enough_from_existing(point, feasible_points, min_point_separation):
-            continue
+            # Also check separation from all previously added points from other instances
+            if not is_far_enough_from_existing(point, all_feasible_points, min_point_separation):
+                continue
 
-        # Check if this point is far enough from already selected points
-        feasible_points.append(point)
+            instance_feasible_points.append(point)
 
-        if len(feasible_points) >= max_points:
+            if len(instance_feasible_points) >= max_points_per_instance:
+                break
+
+        # Add this instance's feasible points to the global list
+        all_feasible_points.extend(instance_feasible_points)
+
+        if instance_feasible_points:
+            print(f"  Instance {instance_idx + 1}: Found {len(instance_feasible_points)} goal points")
+
+        # Stop if we've reached the overall max
+        if len(all_feasible_points) >= max_points:
+            all_feasible_points = all_feasible_points[:max_points]
             break
 
     # If we found feasible points, return them
-    if feasible_points:
-        print(f"Found {len(feasible_points)} well-separated feasible goal points around target")
+    if all_feasible_points:
+        print(f"Total: {len(all_feasible_points)} well-separated feasible goal points across all instances")
         print(f"(Minimum separation: {min_point_separation} pixels)")
-        return feasible_points
+        return all_feasible_points
 
     # Fallback: find nearest safe points from free space with separation constraint
+    # Use the first (largest) instance as reference
     print("Using fallback: finding nearest safe points from free space")
+    center_x, center_y, _ = valid_instances[0]
+
     free_coords = np.where(safe_occupancy == 1)
     if len(free_coords[0]) > 0:
         distances = np.sqrt((free_coords[1] - center_x) ** 2 + (free_coords[0] - center_y) ** 2)
