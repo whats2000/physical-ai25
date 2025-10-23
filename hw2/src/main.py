@@ -9,7 +9,8 @@ from src.semetic_map_construction import remove_items_by_color, remove_top_and_b
 from src.habitat_simulation import navigate_path
 
 SCALE_FACTOR = 0.2
-ROBOT_RADIUS = 10.0
+ROBOT_RADIUS = 12.5
+USE_SIMPLIFIED_PATH = True
 
 
 def pick_starting_point(event: int, x: int, y: int, _flags, _param):
@@ -162,7 +163,7 @@ if __name__ == '__main__':
     
     # Find path from start to any of the target points
     print(f"Finding path from {starting_point} to one of {len(target_points)} target points...")
-    path = path_finder.find_path(starting_point, target_points)
+    path, simplified_path = path_finder.find_path(starting_point, target_points)
     
     if path is None:
         print("Failed to find a valid path!")
@@ -170,16 +171,28 @@ if __name__ == '__main__':
     
     print("=" * 50)
     print(f"Path found with {len(path)} waypoints!")
+    print(f"Simplified path has {len(simplified_path)} waypoints.")
     
     # Draw path on map with RRT exploration visualization
     path_map = draw_path_on_map(
         map_image, 
-        path, 
+        path,
         starting_point, 
         target_points,
         path_finder.explored_nodes,
         path_finder.explored_edges,
         'path_map.png'
+    )
+
+    # Draw simplified path on map with RRT exploration visualization
+    simplified_path_map = draw_path_on_map(
+        map_image,
+        simplified_path,
+        starting_point,
+        target_points,
+        path_finder.explored_nodes,
+        path_finder.explored_edges,
+        'simplified_path_map.png'
     )
     
     # Display the path map with resizing for better visibility
@@ -189,11 +202,19 @@ if __name__ == '__main__':
     print("Displaying path result... Press any key to close.")
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
+    # Display the simplified path map with resizing for better visibility
+    display_simplified_image = cv2.resize(simplified_path_map, (new_width, new_height))
+    cv2.namedWindow('Simplified Path Result', cv2.WINDOW_AUTOSIZE)
+    cv2.imshow('Simplified Path Result', display_simplified_image)
+    print("Displaying simplified path result... Press any key to close.")
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
     
     print("=" * 50)
     print("Starting Habitat navigation simulation...")
     navigate_path(
-        path=path,
+        path=simplified_path if USE_SIMPLIFIED_PATH else path,
         target_name=selected_target['Name'],
         pointcloud_path=args.pointcloud_path
     )

@@ -162,7 +162,42 @@ class RRTPathFinder:
         path.reverse()
         return path
 
-    def find_path(self, start: Tuple[int, int], goals: List[Tuple[int, int]]) -> Optional[List[Tuple[int, int]]]:
+    def _simplify_path(self, path: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        """
+        Simplify the path by removing unnecessary waypoints where a direct straight line is collision-free.
+        
+        Args:
+            path: The original path as list of (x, y) tuples.
+        
+        Returns:
+            Simplified path with fewer waypoints.
+        """
+        if len(path) <= 2:
+            return path
+        
+        simplified = [path[0]]
+        current_idx = 0
+        
+        while current_idx < len(path) - 1:
+            # Find the furthest point we can reach directly from current_idx
+            furthest_idx = current_idx + 1
+            for candidate_idx in range(current_idx + 2, len(path)):
+                if self._is_path_collision_free(np.array(path[current_idx]), np.array(path[candidate_idx])):
+                    furthest_idx = candidate_idx
+                else:
+                    break
+            
+            # Add the furthest reachable point
+            simplified.append(path[furthest_idx])
+            current_idx = furthest_idx
+        
+        return simplified
+
+    def find_path(
+        self,
+        start: Tuple[int, int],
+        goals: List[Tuple[int, int]]
+    ) -> Optional[Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]]:
         """
         Find a path from start to any of the goal points using RRT.
         
@@ -171,7 +206,10 @@ class RRTPathFinder:
             goals: List of goal positions (x, y) in pixels. Path will be found to the nearest reachable goal.
         
         Returns:
-            List of (x, y) tuples representing the path, or None if no path found.
+            A tuple containing:
+                - The full path as a list of (x, y) tuples.
+                - The simplified path as a list of (x, y) tuples.
+            Returns None if no path is found.
         """
         start_point = np.array(start, dtype=float)
         goal_points = [np.array(goal, dtype=float) for goal in goals]
@@ -245,9 +283,14 @@ class RRTPathFinder:
 
                 # Extract path
                 path = self._extract_path(goal_node)
+                
+                # Simplify the path by removing unnecessary waypoints
+                simplified_path = self._simplify_path(path)
+                
                 print(f"Path found in {iteration + 1} iterations with {len(path)} waypoints")
+                print(f"Simplified to {len(simplified_path)} waypoints")
                 print(f"Reached goal at {tuple(goal_point.astype(int))}")
-                return path
+                return path, simplified_path
 
         print("No path found!")
         return None
