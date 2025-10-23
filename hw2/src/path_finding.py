@@ -358,6 +358,20 @@ def find_target_points_on_map(
     gray = cv2.cvtColor(map_image, cv2.COLOR_BGR2GRAY)
     occupancy_map = (gray > 200).astype(np.uint8)
 
+    # Create wall mask
+    # I found that the occupancy map alone is not enough to avoid walls,
+    # so additional wall collision checking is added.
+    wall_colors_bgr = [
+        (255, 112, 0),  # wall #0070FF
+        (255, 0, 51),  # wall-cabinet #3300FF
+        (255, 194, 0)  # wall-plug #00C2FF
+    ]
+    wall_mask = np.zeros(map_image.shape[:2], dtype=np.uint8)
+    for wall_color in wall_colors_bgr:
+        color_mask = cv2.inRange(map_image, np.array(wall_color), np.array(wall_color))
+        wall_mask = cv2.bitwise_or(wall_mask, color_mask)
+    wall_mask = (wall_mask > 0).astype(np.uint8)
+
     # Add safety margin by eroding free space
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
     safe_occupancy = cv2.erode(occupancy_map, kernel, iterations=1)
@@ -439,6 +453,23 @@ def find_target_points_on_map(
                         break
 
                 if is_safe:
+                    # Check if line from candidate to target crosses a wall
+                    # If crossing a wall, it must be avoided
+                    crosses_wall = False
+                    steps = int(np.sqrt((new_x - center_x) ** 2 + (new_y - center_y) ** 2))
+                    for step in range(steps + 1):
+                        t = step / max(steps, 1)
+                        check_x = int(center_x + t * (new_x - center_x))
+                        check_y = int(center_y + t * (new_y - center_y))
+                        if (0 <= check_x < wall_mask.shape[1] and 0 <= check_y < wall_mask.shape[0] and
+                            wall_mask[check_y, check_x] == 1):
+                            crosses_wall = True
+                            break
+
+                    if crosses_wall:
+                        # When line crosses a wall, skip this candidate
+                        continue
+
                     # Add to candidate points with distance from center for sorting
                     distance_from_center = np.sqrt((new_x - center_x) ** 2 + (new_y - center_y) ** 2)
                     instance_candidate_points.append((new_x, new_y, distance_from_center))
@@ -468,9 +499,6 @@ def find_target_points_on_map(
 
         # Add this instance's feasible points to the global list
         all_feasible_points.extend(instance_feasible_points)
-
-        if instance_feasible_points:
-            print(f"  Instance {instance_index + 1}: Found {len(instance_feasible_points)} goal points")
 
         # Stop if we've reached the overall max
         if len(all_feasible_points) >= max_points:
