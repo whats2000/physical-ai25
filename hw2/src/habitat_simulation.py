@@ -1,3 +1,4 @@
+import json
 import os
 from typing import List, Tuple, Dict
 
@@ -81,8 +82,6 @@ def load_semantic_mappings(
     Returns:
         Tuple of (semantic_mapping, name_to_instance_ids).
     """
-    import json
-
     with open(semantic_file, 'r') as f:
         semantic_data = json.load(f)
 
