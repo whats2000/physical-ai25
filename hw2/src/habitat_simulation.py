@@ -63,7 +63,7 @@ def make_navigation_cfg(settings: dict) -> habitat_sim.Configuration:
     semantic_sensor_spec.orientation = [settings["sensor_pitch"], 0.0, 0.0]
     semantic_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
 
-    # Only use RGB and Semantic sensors
+    # Because we don't need depth for this task, we only add RGB and semantic sensors
     agent_cfg.sensor_specifications = [rgb_sensor_spec, semantic_sensor_spec]
 
     return habitat_sim.Configuration(simulation_config, [agent_cfg])
