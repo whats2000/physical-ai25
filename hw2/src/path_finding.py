@@ -25,7 +25,8 @@ class RRTPathFinder:
         step_size: float = 30.0,
         max_iterations: int = 5000,
         goal_sample_rate: float = 0.5,
-        robot_radius: float = 15.0
+        robot_radius: float = 15.0,
+        occupancy_map_path: str = 'occupancy_map.png'
     ):
         """
         Initialize the RRT pathfinder.
@@ -36,6 +37,7 @@ class RRTPathFinder:
             max_iterations: Maximum number of iterations.
             goal_sample_rate: Probability of sampling the goal.
             robot_radius: Safety margin around obstacles in pixels.
+            occupancy_map_path: Path to occupancy map.
         """
         self.map_image = map_image
         self.map_height, self.map_width = map_image.shape[:2]
@@ -43,29 +45,9 @@ class RRTPathFinder:
         self.max_iterations = max_iterations
         self.goal_sample_rate = goal_sample_rate
         self.robot_radius = robot_radius
-        self.occupancy_map = self._create_occupancy_map()
+        self.occupancy_map = cv2.imread(occupancy_map_path, cv2.IMREAD_GRAYSCALE)
         self.explored_nodes = []
         self.explored_edges = []
-
-    def _create_occupancy_map(self) -> np.ndarray:
-        """
-        Create a binary occupancy map with safety margin.
-        """
-        if len(self.map_image.shape) == 3:
-            # The free space is white (255, 255, 255)
-            is_free = np.all(self.map_image == 255, axis=2).astype(np.uint8)
-        else:
-            raise NotImplementedError("Map image must be a 3-channel RGB image.")
-
-        # Add safety margin by eroding free space, this can be help the robot avoid obstacles
-        kernel_size = int(2 * self.robot_radius) + 1
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
-        occupancy_map = cv2.erode(is_free, kernel, iterations=1)
-
-        # Save occupancy map
-        cv2.imwrite('occupancy_map.png', occupancy_map * 255)
-
-        return occupancy_map
 
     def _is_collision_free(self, point: np.ndarray) -> bool:
         """
@@ -308,7 +290,9 @@ def find_target_points_on_map(
     target_color: Tuple[int, int, int],
     offset_distance: int = 40,
     max_points: int = 10,
-    min_point_separation: int = 30
+    min_point_separation: int = 30,
+    robot_radius: float = 15.0,
+    occupancy_map_path: str = 'occupancy_map.png'
 ) -> List[Tuple[int, int]]:
     """
     Find multiple well-distributed safe points around the target item for better path planning.
@@ -320,6 +304,8 @@ def find_target_points_on_map(
         offset_distance: Distance to move away from the target.
         max_points: Maximum number of feasible target points to return.
         min_point_separation: Minimum distance between target points to avoid overlap.
+        robot_radius: Robot radius for safety margin in pixels.
+        occupancy_map_path: Path to save the occupancy map.
     
     Returns:
         List of well-separated (x, y) points around the target, or empty list if target not found.
@@ -372,9 +358,13 @@ def find_target_points_on_map(
         wall_mask = cv2.bitwise_or(wall_mask, color_mask)
     wall_mask = (wall_mask > 0).astype(np.uint8)
 
-    # Add safety margin by eroding free space
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+    # Add safety margin by eroding free space, this can be help the robot avoid obstacles
+    kernel_size = int(2 * robot_radius) + 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
     safe_occupancy = cv2.erode(occupancy_map, kernel, iterations=1)
+
+    # Save occupancy map
+    cv2.imwrite(occupancy_map_path, safe_occupancy * 255)
 
     def is_far_enough_from_existing(
         new_point: Tuple[int, int],

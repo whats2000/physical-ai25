@@ -97,10 +97,11 @@ if __name__ == '__main__':
 
         # Find multiple reachable points around the target
         target_points = find_target_points_on_map(
-            map_image, 
-            selected_target['Color_Code (R,G,B)'], 
+            map_image,
+            selected_target['Color_Code (R,G,B)'],
             offset_distance=40,
-            max_points=30
+            max_points=30,
+            robot_radius=ROBOT_RADIUS,
         )
 
         # If there are no reachable points for the target item, ask for a different item
@@ -151,7 +152,7 @@ if __name__ == '__main__':
 
     # Load the map image for RRT
     map_image = cv2.imread('map.png')
-    
+
     # Initialize RRT pathfinder with improved parameters
     path_finder = RRTPathFinder(
         map_image=map_image,
@@ -160,24 +161,24 @@ if __name__ == '__main__':
         goal_sample_rate=0.15,
         robot_radius=ROBOT_RADIUS
     )
-    
+
     # Find path from start to any of the target points
     print(f"Finding path from {starting_point} to one of {len(target_points)} target points...")
     path, simplified_path = path_finder.find_path(starting_point, target_points)
-    
+
     if path is None:
         print("Failed to find a valid path!")
         exit(1)
-    
+
     print("=" * 50)
     print(f"Path found with {len(path)} waypoints!")
     print(f"Simplified path has {len(simplified_path)} waypoints.")
-    
+
     # Draw path on map with RRT exploration visualization
     path_map = draw_path_on_map(
-        map_image, 
+        map_image,
         path,
-        starting_point, 
+        starting_point,
         target_points,
         path_finder.explored_nodes,
         path_finder.explored_edges,
@@ -194,7 +195,7 @@ if __name__ == '__main__':
         path_finder.explored_edges,
         'simplified_path_map.png'
     )
-    
+
     # Display the path map with resizing for better visibility
     display_image = cv2.resize(path_map, (new_width, new_height))
     cv2.namedWindow('Path Result', cv2.WINDOW_AUTOSIZE)
@@ -210,7 +211,7 @@ if __name__ == '__main__':
     print("Displaying simplified path result... Press any key to close.")
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-    
+
     print("=" * 50)
     print("Starting Habitat navigation simulation...")
     navigate_path(
