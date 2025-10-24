@@ -338,10 +338,10 @@ def find_target_points_on_map(
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
 
     # Filter out background (label 0) and small noise components
-    min_component_size = 5  # Minimum pixels for a valid target instance
+    min_component_size = 5
     valid_instances = []
 
-    for i in range(1, num_labels):  # Skip background (0)
+    for i in range(1, num_labels):
         area = stats[i, cv2.CC_STAT_AREA]
         if area >= min_component_size:
             center_x = int(centroids[i][0])
