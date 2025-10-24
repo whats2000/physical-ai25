@@ -24,7 +24,7 @@ class RRTPathFinder:
         map_image: np.ndarray,
         step_size: float = 30.0,
         max_iterations: int = 5000,
-        goal_sample_rate: float = 0.15,
+        goal_sample_rate: float = 0.5,
         robot_radius: float = 15.0
     ):
         """

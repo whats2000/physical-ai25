@@ -109,7 +109,7 @@ def navigate_path(
     semantic_file: str = 'replica_v1/apartment_0/habitat/info_semantic.json',
     pointcloud_path: str = 'semantic_3d_pointcloud',
     floor_height: float = 0.0,
-    forward_amount: float = 0.5,
+    forward_amount: float = 0.25,
     turn_amount: float = 10.0,
     video_fps: int = 10,
     video_path: str = 'results'
@@ -188,7 +188,7 @@ def navigate_path(
         print(f"Navigating to waypoint {i}/{len(habitat_path) - 1}")
 
         waypoint_reached = False
-        max_attempts = 500  # Prevent infinite loops
+        max_attempts = 5000
         attempts = 0
 
         while not waypoint_reached and attempts < max_attempts:
@@ -206,7 +206,7 @@ def navigate_path(
             distance = np.sqrt(dx ** 2 + dz ** 2)
 
             # Check if reached waypoint - tighter threshold for more precise navigation
-            if distance < forward_amount * 0.8:  # Threshold: 0.8x forward amount
+            if distance < forward_amount * 0.8:
                 print(f"[INFO] Reached waypoint {i} (distance: {distance:.2f}m)")
 
                 # Wait for few seconds at the waypoint
