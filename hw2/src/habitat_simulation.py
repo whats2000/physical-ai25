@@ -204,7 +204,7 @@ def navigate_path(
             dz = target_z - current_z  # Z component (forward)
             distance = np.sqrt(dx ** 2 + dz ** 2)
 
-            # Check if reached waypoint - tighter threshold for more precise navigation
+            # Check if reached waypoint
             if distance < forward_amount * 0.8:
                 print(f"[INFO] Reached waypoint {i} (distance: {distance:.2f}m)")
 
