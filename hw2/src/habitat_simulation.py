@@ -154,9 +154,9 @@ def navigate_path(
     }
 
     # Initialize simulator
-    cfg = make_navigation_config(sim_settings)
-    sim = habitat_sim.Simulator(cfg)
-    agent = sim.initialize_agent(sim_settings["default_agent"])
+    config = make_navigation_config(sim_settings)
+    simulation = habitat_sim.Simulator(config)
+    agent = simulation.initialize_agent(sim_settings["default_agent"])
 
     # Load semantic mappings
     semantic_mapping, name_to_instance_ids = load_semantic_mappings(semantic_file)
@@ -245,7 +245,7 @@ def navigate_path(
             # Only render every N frames for visualization
             action_count += 1
             if action_count % render_interval == 0:
-                observations = sim.get_sensor_observations()
+                observations = simulation.get_sensor_observations()
 
                 # Get RGB image and semantic observation
                 rgb_image = observations["color_sensor"][:, :, [2, 1, 0]] # Convert RGB to BGR
@@ -275,4 +275,4 @@ def navigate_path(
 
     print(f"Navigation complete. Video saved as {video_filename}")
 
-    sim.close()
+    simulation.close()
