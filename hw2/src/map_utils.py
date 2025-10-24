@@ -199,7 +199,7 @@ def load_map_limits(
     points = np.load(f'{pointcloud_path}/point.npy')
     colors = np.load(f'{pointcloud_path}/color0255.npy')
 
-    # Apply the same filtering as in main.py
+    # Apply the same filtering as in save_semantic_map
     filtered_points, filtered_colors = remove_items_by_color(points, colors)
     filtered_points, filtered_colors = remove_top_and_bottom(filtered_points, filtered_colors)
 
