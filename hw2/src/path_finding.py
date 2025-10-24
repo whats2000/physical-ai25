@@ -219,8 +219,6 @@ class RRTPathFinder:
         root = TreeNode(start_point)
         nodes = [root]
 
-        goal_threshold = self.step_size * 1.5  # 1.5x step size for goal reach
-
         for iteration in range(self.max_iterations):
             if (iteration + 1) % 500 == 0:
                 # Print progress every 500 iterations
@@ -257,7 +255,8 @@ class RRTPathFinder:
             # Check if we reached any of the goals
             for goal_point in valid_goal_points:
                 distance_to_goal = np.linalg.norm(new_node.position - goal_point)
-                if distance_to_goal >= goal_threshold:
+                # Check if within goal threshold (1.5x step size)
+                if distance_to_goal >= self.step_size * 1.5:
                     # Not close enough to this goal yet
                     continue
 
