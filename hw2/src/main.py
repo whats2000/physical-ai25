@@ -157,7 +157,7 @@ if __name__ == '__main__':
     path_finder = RRTPathFinder(
         map_image=map_image,
         step_size=80.0,
-        max_iterations=5000,
+        max_iterations=10000,
         goal_sample_rate=0.15,
         robot_radius=ROBOT_RADIUS
     )
