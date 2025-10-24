@@ -1,5 +1,3 @@
-import os
-import sys
 from typing import Tuple, Optional, Dict, List
 
 import cv2
@@ -84,18 +82,18 @@ def pixel_to_habitat_coords(
         data_x_min, data_x_max = 0, image_size[0]
         data_y_min, data_y_max = 0, image_size[1]
 
-    # Map pixel coordinates to plot coordinates using the actual data bounds
-    # In the plot: X-axis = Z coordinates (horizontal), Y-axis = X coordinates (vertical)
+    """
+    Map pixel coordinates to plot coordinates using the data bounds
+    In the plot: 
+    - X-axis -> Z coordinates
+    - Y-axis -> X coordinates
+    """
 
     # Map pixel X to plot Z (horizontal axis)
-    plot_z = x_limit[0] + ((pixel_x - data_x_min) / (data_x_max - data_x_min)) * (x_limit[1] - x_limit[0])
+    habitat_z = x_limit[0] + ((pixel_x - data_x_min) / (data_x_max - data_x_min)) * (x_limit[1] - x_limit[0])
 
-    # Map pixel Y to plot X (vertical axis), inverting because image Y goes top-down but plot Y goes bottom-up
-    plot_x = y_limit[1] - ((pixel_y - data_y_min) / (data_y_max - data_y_min)) * (y_limit[1] - y_limit[0])
-
-    # Plot coordinates ARE the Habitat world coordinates
-    habitat_z = plot_z
-    habitat_x = plot_x
+    # Map pixel Y to plot X (vertical axis), inverting because image Y goes opposite to plot Y
+    habitat_x = y_limit[1] - ((pixel_y - data_y_min) / (data_y_max - data_y_min)) * (y_limit[1] - y_limit[0])
 
     return habitat_x, habitat_z
 
@@ -197,8 +195,6 @@ def load_map_limits(
     Returns:
         Tuple containing (x_limit, y_limit, image_size, data_bounds).
     """
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
     # Load the 3D semantic map from npy files
     points = np.load(f'{pointcloud_path}/point.npy')
     colors = np.load(f'{pointcloud_path}/color0255.npy')
@@ -207,7 +203,7 @@ def load_map_limits(
     filtered_points, filtered_colors = remove_items_by_color(points, colors)
     filtered_points, filtered_colors = remove_top_and_bottom(filtered_points, filtered_colors)
 
-    # Calculate the limits (same as in save_semantic_map)
+    # Calculate the limits
     z_coords = filtered_points[:, 2] * 10000.0 / 255.0
     x_coords = filtered_points[:, 0] * 10000.0 / 255.0
 
