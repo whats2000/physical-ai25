@@ -69,3 +69,16 @@ pip install openpyxl
 # Run the code (Note: Must run as module)
 python -m src.main
 ```
+
+**Usage Instructions:**
+1. Type an item in the terminal when prompted. (E.g. `cup`, `cooktop`, `cushion`, etc.)
+2. Click a point as the starting position in the visualized window, and close the window to continue.
+3. The path finding result will show up in a new window. 
+   Close the window to continue. 
+   (Also, the image will save as `path_map.png`)
+4. The simplified path finding result will show up in a new window. 
+   Close the window to continue. 
+   (Also, the image will save as `simplified_path_map.png`)
+5. The simulation will run and show the agent moving along the simplified path. 
+   The window will close when the agent reaches the target or exceeds the maximum step limit. 
+   (The video will record and save at `results/<item>.mp4`, where `<item>` is the item you typed in step 1.)
