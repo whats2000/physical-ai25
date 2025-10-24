@@ -356,7 +356,7 @@ def find_target_points_on_map(
 
     # Create occupancy map with safety margin
     gray = cv2.cvtColor(map_image, cv2.COLOR_BGR2GRAY)
-    occupancy_map = (gray > 200).astype(np.uint8)
+    occupancy_map = (gray == 255).astype(np.uint8)
 
     # Create wall mask
     # I found that the occupancy map alone is not enough to avoid walls,
