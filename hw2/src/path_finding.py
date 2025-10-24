@@ -44,8 +44,8 @@ class RRTPathFinder:
         self.goal_sample_rate = goal_sample_rate
         self.robot_radius = robot_radius
         self.occupancy_map = self._create_occupancy_map()
-        self.explored_nodes = []  # Track all explored nodes
-        self.explored_edges = []  # Track all explored edges
+        self.explored_nodes = []
+        self.explored_edges = []
 
     def _create_occupancy_map(self) -> np.ndarray:
         """
