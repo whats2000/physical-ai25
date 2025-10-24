@@ -10,7 +10,6 @@ from src.map_utils import (
     pixel_to_habitat_coords,
     load_map_limits,
     apply_semantic_highlighting,
-    transform_rgb_bgr,
 )
 
 
@@ -249,7 +248,7 @@ def navigate_path(
                 observations = sim.get_sensor_observations()
 
                 # Get RGB image and semantic observation
-                rgb_image = transform_rgb_bgr(observations["color_sensor"])
+                rgb_image = observations["color_sensor"][:, :, [2, 1, 0]] # Convert RGB to BGR
                 semantic_obs = observations["semantic_sensor"]
 
                 # Highlight target item in RGB view (same as interactive tool)
