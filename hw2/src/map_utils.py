@@ -58,8 +58,7 @@ def pixel_to_habitat_coords(
     pixel_y: float,
     x_limit: Tuple[float, float],
     y_limit: Tuple[float, float],
-    image_size: Tuple[int, int],
-    data_bounds: Optional[Tuple[float, float, float, float]] = None
+    data_bounds: Tuple[float, float, float, float],
 ) -> Tuple[float, float]:
     """
     Convert pixel coordinates on the 2D map to Habitat 3D coordinates.
@@ -69,18 +68,13 @@ def pixel_to_habitat_coords(
         pixel_y: Y coordinate on the map image.
         x_limit: Tuple of (x_min, x_max) from the map plotting (Z coordinates).
         y_limit: Tuple of (y_min, y_max) from the map plotting (X coordinates).
-        image_size: Tuple of (width, height) of the map image.
-        data_bounds: Optional tuple of (x_min, x_max, y_min, y_max) for actual data region.
+        data_bounds: Tuple of (x_min, x_max, y_min, y_max) for actual data region.
 
     Returns:
         Tuple of (habitat_x, habitat_z) coordinates.
     """
-    # Use data bounds if provided, otherwise use full image
-    if data_bounds is not None:
-        data_x_min, data_x_max, data_y_min, data_y_max = data_bounds
-    else:
-        data_x_min, data_x_max = 0, image_size[0]
-        data_y_min, data_y_max = 0, image_size[1]
+    # Extract data bounds
+    data_x_min, data_x_max, data_y_min, data_y_max = data_bounds
 
     """
     Map pixel coordinates to plot coordinates using the data bounds

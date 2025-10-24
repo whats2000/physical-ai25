@@ -136,7 +136,7 @@ def navigate_path(
     habitat_path = []
     for pixel_x, pixel_y in path:
         habitat_x, habitat_z = pixel_to_habitat_coords(
-            pixel_x, pixel_y, x_limit, y_limit, image_size, data_bounds
+            pixel_x, pixel_y, x_limit, y_limit, data_bounds
         )
         habitat_path.append((habitat_x, habitat_z))
 

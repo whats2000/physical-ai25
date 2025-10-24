@@ -377,7 +377,7 @@ def mouse_callback(event: int, x: int, y: int, _flags: int, _param: Optional[obj
 
         # Convert pixel coordinates to Habitat coordinates
         habitat_x, habitat_z = pixel_to_habitat_coords(
-            original_x, original_y, x_limit, y_limit, image_size, data_bounds
+            original_x, original_y, x_limit, y_limit, data_bounds
         )
 
         # Snap to nearest navigable point to ensure we're on the correct floor
