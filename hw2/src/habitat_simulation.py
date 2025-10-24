@@ -13,7 +13,7 @@ from src.map_utils import (
 )
 
 
-def make_navigation_cfg(settings: dict) -> habitat_sim.Configuration:
+def make_navigation_config(settings: dict) -> habitat_sim.Configuration:
     """
     Create simulator configuration for navigation with discrete actions.
 
@@ -26,7 +26,7 @@ def make_navigation_cfg(settings: dict) -> habitat_sim.Configuration:
     simulation_config = habitat_sim.SimulatorConfiguration()
     simulation_config.scene_id = settings["scene"]
 
-    agent_cfg = habitat_sim.agent.AgentConfiguration()
+    agent_config = habitat_sim.agent.AgentConfiguration()
 
     # Define action space for navigation
     action_space = {
@@ -43,7 +43,7 @@ def make_navigation_cfg(settings: dict) -> habitat_sim.Configuration:
             habitat_sim.ActuationSpec(amount=settings["turn_amount"])
         ),
     }
-    agent_cfg.action_space = action_space
+    agent_config.action_space = action_space
 
     # RGB sensor
     rgb_sensor_spec = habitat_sim.CameraSensorSpec()
@@ -64,9 +64,9 @@ def make_navigation_cfg(settings: dict) -> habitat_sim.Configuration:
     semantic_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
 
     # Because we don't need depth for this task, we only add RGB and semantic sensors
-    agent_cfg.sensor_specifications = [rgb_sensor_spec, semantic_sensor_spec]
+    agent_config.sensor_specifications = [rgb_sensor_spec, semantic_sensor_spec]
 
-    return habitat_sim.Configuration(simulation_config, [agent_cfg])
+    return habitat_sim.Configuration(simulation_config, [agent_config])
 
 
 def load_semantic_mappings(
@@ -154,7 +154,7 @@ def navigate_path(
     }
 
     # Initialize simulator
-    cfg = make_navigation_cfg(sim_settings)
+    cfg = make_navigation_config(sim_settings)
     sim = habitat_sim.Simulator(cfg)
     agent = sim.initialize_agent(sim_settings["default_agent"])
 
