@@ -90,7 +90,7 @@ def your_fk(
         f'Both DH_params and q should contain 6 values,\n' \
         f'but get len(DH_params) = {dh_params}, len(q) = {len(joint_pose)}'
 
-    A = get_matrix_from_pose(base_pose)  # a 4x4 matrix, type should be np.ndarray
+    pose_matrix = get_matrix_from_pose(base_pose)  # a 4x4 matrix, type should be np.ndarray
     jacobian = np.zeros((6, 6))  # a 6x6 matrix, type should be np.ndarray
 
     # -------------------------------------------------------------------------------- #
@@ -102,7 +102,7 @@ def your_fk(
 
     #### your code ####
 
-    # A = ? # may be more than one line
+    # pose_matrix = ? # may be more than one line
     # jacobian = ? # may be more than one line
 
     raise NotImplementedError
@@ -115,8 +115,8 @@ def your_fk(
     adjustment = np.asarray([[0, -1, 0],
                              [0, 0, 0],
                              [0, 0, -1]])
-    A[:3, :3] = A[:3, :3] @ adjustment
-    pose_7d = np.asarray(get_pose_from_matrix(A, 7))
+    pose_matrix[:3, :3] = pose_matrix[:3, :3] @ adjustment
+    pose_7d = np.asarray(get_pose_from_matrix(pose_matrix, 7))
 
     return pose_7d, jacobian
 
