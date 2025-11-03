@@ -12,7 +12,7 @@ import pybullet_data
 from hw3_utils.bullet_utils import draw_coordinate, get_matrix_from_pose, get_pose_from_matrix, pose_7d_to_6d, pose_6d_to_7d
 
 # you may use your forward kinematic algorithm to compute 
-from fk import your_fk, get_ur5_DH_params
+from fk import your_fk, get_ur5_dh_params
 
 SIM_TIMESTEP = 1.0 / 240.0
 TASK2_SCORE_MAX = 40
