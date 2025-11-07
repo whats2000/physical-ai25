@@ -94,21 +94,70 @@ def your_fk(
     jacobian = np.zeros((6, 6))  # a 6x6 matrix, type should be np.ndarray
 
     # -------------------------------------------------------------------------------- #
-    # --- TODO: Read the task description                                          --- #
     # --- Task 1 : Compute Forward-Kinematic and Jacobain of the robot by yourself --- #
     # ---          Try to implement `your_fk` function without using any pybullet  --- #
     # ---          API. (20% for accuracy)                                         --- #
     # -------------------------------------------------------------------------------- #
 
-    #### your code ####
-
-    # pose_matrix = ? # may be more than one line
-    # jacobian = ? # may be more than one line
-
-    raise NotImplementedError
-    # hint : 
+    #### your code ################################
+    # hint :
     # https://automaticaddison.com/the-ultimate-guide-to-jacobian-matrices-for-robotics/
+    ###############################################
 
+    # Store the transformation matrix to the origin of each joint frame
+    transformed_frames = [np.copy(pose_matrix)]
+    transformed_cumulative = np.copy(pose_matrix)
+
+    # Compute Forward-Kinematic
+    for i in range(6):
+        # Get classic Denavit–Hartenberg params for joint i
+        a = dh_params[i]['a']
+        d = dh_params[i]['d']
+        alpha = dh_params[i]['alpha']
+
+        # Get the variable joint angle (theta_i)
+        theta = joint_pose[i]
+
+        # Pre-calculate sin and cos
+        cos_theta = np.cos(theta)
+        sin_theta = np.sin(theta)
+        cos_alpha = np.cos(alpha)
+        sin_alpha = np.sin(alpha)
+
+        # Construct the classic Denavit–Hartenberg Transformation Matrix i-1 to i
+        transformation_i = np.array([
+            [cos_theta, -sin_theta * cos_alpha, sin_theta * sin_alpha, a * cos_theta],
+            [sin_theta, cos_theta * cos_alpha, -cos_theta * sin_alpha, a * sin_theta],
+            [0, sin_alpha, cos_alpha, d],
+            [0, 0, 0, 1]
+        ])
+
+        # Chain the matrix multiplication
+        transformed_cumulative = transformed_cumulative @ transformation_i
+        transformed_frames.append(transformed_cumulative)
+
+    # The final pose_matrix is the last one we calculated (T_world_to_6)
+    pose_matrix = transformed_cumulative
+
+    # Get the end-effector position (p_e) from the final pose matrix
+    end_effector_position = pose_matrix[0:3, 3]
+
+    # Iterate through each joint again to build the Jacobian columns
+    for i in range(6):
+        # Get the transformation to the start of the i-th joint
+        transformed_link = transformed_frames[i]
+
+        # Get the z-axis (axis of rotation) from the rotation matrix part
+        z_axis = transformed_link[0:3, 2]
+
+        # Get the origin of the frame (position) from the translation part
+        frame_position = transformed_link[0:3, 3]
+
+        # Calculate the linear velocity part of the Jacobian column
+        jacobian[0:3, i] = np.cross(z_axis, end_effector_position - frame_position)
+
+        # Calculate the angular velocity part of the Jacobian column
+        jacobian[3:6, i] = z_axis
     ###############################################
 
     # adjustment don't touch
