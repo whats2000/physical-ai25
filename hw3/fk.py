@@ -6,7 +6,6 @@ from typing import List, Union, Tuple
 from typing_extensions import TypedDict
 
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 
 # for simulator
 import pybullet as p  # type: ignore
@@ -14,7 +13,7 @@ from pybullet_robot_envs.envs.ur5_envs.ur5_env import ur5Env
 
 # for geometry information
 from hw3_utils.bullet_utils import draw_coordinate, get_matrix_from_pose, \
-    get_pose_from_matrix, pose_7d_to_6d, pose_6d_to_7d
+    get_pose_from_matrix
 
 SIM_TIMESTEP = 1.0 / 240.0
 JACOBIAN_SCORE_MAX = 10.0
