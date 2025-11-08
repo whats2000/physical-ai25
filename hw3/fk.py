@@ -69,7 +69,7 @@ def get_ur5_dh_params() -> List[DHParamsType]:
 def your_fk(
     dh_params: List[DHParamsType],
     joint_pose: Union[List[float], Tuple[float, float, float, float, float, float], np.ndarray],
-    base_pos: Tuple[float, float, float]
+    base_pos: Union[Tuple[float, float, float], List[float]]
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Your Forward Kinematic function

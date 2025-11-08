@@ -15,7 +15,7 @@ from typing_extensions import TypedDict
 from hw3_utils.bullet_utils import draw_coordinate, get_matrix_from_pose, get_pose_from_matrix, pose_7d_to_6d, \
     pose_6d_to_7d
 
-# you may use your forward kinematic algorithm to compute 
+# you may use your forward kinematic algorithm to compute
 from fk import your_fk, get_ur5_dh_params
 from pybullet_robot_envs.envs.ur5_envs.ur5_env import ur5Env
 
@@ -47,7 +47,7 @@ def pybullet_ik(
     new_pose: Union[List[float], Tuple[float, float, float, float, float, float], np.ndarray],
     max_iters: int = 1000,
     stop_thresh: float = .001,
-    base_pos: Optional[List[float]] = None,
+    base_pos: Optional[Tuple[float, float, float]] = None,
 ) -> np.ndarray:
     """
     Pybullet Inverse Kinematic Solver of the robot.
@@ -125,19 +125,60 @@ def your_ik(
     # --- Note : please modify the code in `your_ik` function.                     --- #
     # -------------------------------------------------------------------------------- #
 
-    #### your code ####
-
+    #### your code ################################
     # TODO: update tmp_q
     # tmp_q = ? # may be more than one line
 
     # hint : 
     # 1. You may use `your_fk` function and jacobian matrix to do this
     # 2. Be careful when computing the delta x
-    # 3. You may use some hyper parameters (i.e., step rate) in optimization loops
+    # 3. You may use some hyperparameters (i.e., step rate) in optimization loops
+    ###############################################
+    # Convert new_pose to numpy array
+    new_pose = np.array(new_pose)
 
-    ###################
+    # Get the Denavit–Hartenberg params for the UR5 robot
+    dh_params = get_ur5_dh_params()
 
-    raise NotImplementedError
+    # Set step rate for joint updates
+    step_rate = 0.5
+
+    # iterative optimization
+    for i in range(max_iters):
+        # Forward kinematics to get current end-effector pose
+        pose_7d_current, j_matrix = your_fk(dh_params, tmp_q, base_pos)
+
+        # Calculate position error
+        position_current = pose_7d_current[:3]
+        position_target = new_pose[:3]
+        position_error = position_target - position_current
+
+        # Calculate orientation error
+        quaternion_current = pose_7d_current[3:]
+        quaternion_target = new_pose[3:]
+        rotation_current = R.from_quat(quaternion_current)
+        rotation_target = R.from_quat(quaternion_target)
+        rotation_error_vector = (rotation_target * rotation_current.inv()).as_rotvec()
+
+        # Combine position and orientation errors
+        delta_x = np.concatenate((position_error, rotation_error_vector))
+
+        # Calculate the Jacobian Pseudo-Inverse
+        jacobian_pseudo_inverse = np.array(pinv(j_matrix))
+
+        # Compute the required joint angle changes
+        delta_q = jacobian_pseudo_inverse @ delta_x
+
+        # Update joint angles
+        tmp_q += step_rate * delta_q
+
+        # Enforce joint limits to keep angles within the physical range
+        tmp_q = np.clip(tmp_q, joint_limits[:, 0], joint_limits[:, 1])
+
+        # Check for convergence
+        if np.linalg.norm(delta_x) < stop_thresh:
+            break
+    ###############################################
 
     return np.array(tmp_q)  # 6 DoF
 
