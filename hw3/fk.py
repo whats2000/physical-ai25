@@ -103,7 +103,7 @@ def your_fk(
     # https://automaticaddison.com/the-ultimate-guide-to-jacobian-matrices-for-robotics/
     ###############################################
 
-    # Store the transformation matrix to the origin of each joint frame
+    # Store the transformation matrices of each joint and cumulative transformation
     joint_transforms = [np.copy(pose_matrix)]
     cumulative_transform = np.copy(pose_matrix)
 
