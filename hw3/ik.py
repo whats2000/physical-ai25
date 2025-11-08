@@ -25,9 +25,10 @@ IK_ERROR_THRESH = 0.02
 # Set to True to use Damped Least Squares method in your_ik function
 USE_DLS = True
 
+
 class InverseKinematicTestcaseDict(TypedDict):
-    current_joint_poses: List[List[float]] # list of joint angles (6 DoF)
-    next_poses: List[List[float]] # list of target end-effector poses (x, y, z, qx, qy, qz, qw)
+    current_joint_poses: List[List[float]]  # list of joint angles (6 DoF)
+    next_poses: List[List[float]]  # list of target end-effector poses (x, y, z, qx, qy, qz, qw)
 
 
 def cross(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -105,7 +106,6 @@ def your_ik(
         np.ndarray: computed joint angles (6 DoF)
     """
     if USE_DLS:
-        print("Using Damped Least Squares method for IK")
         # For comparison purposes
         return your_ik_damped_least_squares(
             robot_id,
@@ -114,8 +114,6 @@ def your_ik(
             stop_thresh,
             base_pos
         )
-
-    print("Using Pseudo-Inverse method for IK")
 
     joint_limits = np.asarray([
         [-3 * np.pi / 2, -np.pi / 2],  # joint1
