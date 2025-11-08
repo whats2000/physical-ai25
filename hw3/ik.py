@@ -22,6 +22,9 @@ SIM_TIMESTEP = 1.0 / 240.0
 TASK2_SCORE_MAX = 40
 IK_ERROR_THRESH = 0.02
 
+# Set to True to use Damped Least Squares method in your_ik function
+USE_DLS = True
+
 class InverseKinematicTestcaseDict(TypedDict):
     current_joint_poses: List[List[float]] # list of joint angles (6 DoF)
     next_poses: List[List[float]] # list of target end-effector poses (x, y, z, qx, qy, qz, qw)
@@ -101,6 +104,19 @@ def your_ik(
     Returns:
         np.ndarray: computed joint angles (6 DoF)
     """
+    if USE_DLS:
+        print("Using Damped Least Squares method for IK")
+        # For comparison purposes
+        return your_ik_damped_least_squares(
+            robot_id,
+            new_pose,
+            max_iters,
+            stop_thresh,
+            base_pos
+        )
+
+    print("Using Pseudo-Inverse method for IK")
+
     joint_limits = np.asarray([
         [-3 * np.pi / 2, -np.pi / 2],  # joint1
         [-2.3562, -1],  # joint2
@@ -179,6 +195,102 @@ def your_ik(
             break
     ###############################################
 
+    return np.array(tmp_q)  # 6 DoF
+
+
+def your_ik_damped_least_squares(
+    robot_id: int,
+    new_pose: Union[List[float], Tuple[float, float, float, float, float, float], np.ndarray],
+    max_iters: int = 1000,
+    stop_thresh: float = .001,
+    base_pos: Optional[List[float]] = None,
+) -> np.ndarray:
+    """
+    Your Inverse Kinematic Solver of the robot using Damped Least Squares method.
+    Compute the joint angles given the target end-effector pose.
+    Args:
+        robot_id (int): the unique ID of the robot in pybullet
+        new_pose (Union[List[float], Tuple[float, float, float, float, float, float], np.ndarray]):
+            target end-effector pose (position + orientation as quaternion)
+        max_iters (int): maximum number of iterations
+        stop_thresh (float): stopping threshold for the error norm
+        base_pos (Optional[List[float]]): base position of the robot (not used here)
+    Returns:
+        np.ndarray: computed joint angles (6 DoF)
+    """
+    joint_limits = np.asarray([
+        [-3 * np.pi / 2, -np.pi / 2],  # joint1
+        [-2.3562, -1],  # joint2
+        [-17, 17],  # joint3
+        [-17, 17],  # joint4
+        [-17, 17],  # joint5
+        [-17, 17],  # joint6
+    ])
+
+    # get current joint angles and gripper pos, (gripper pos is fixed)
+    num_q = p.getNumJoints(robot_id)
+    q_states = p.getJointStates(robot_id, range(0, num_q))
+
+    tmp_q = np.asarray([x[0] for x in q_states][2:8])  # current joint angles 6d (You only need to modify this)
+
+    #### your code ################################
+    # Convert new_pose to numpy array
+    new_pose = np.array(new_pose)
+
+    # Get the Denavit–Hartenberg params for the UR5 robot
+    dh_params = get_ur5_dh_params()
+
+    # Set step rate for joint updates
+    step_rate = 0.5
+
+    # Set the damping factor (lambda) for Damped Least Squares
+    damping_lambda = 0.01
+
+    # iterative optimization
+    for i in range(max_iters):
+        # Forward kinematics to get current end-effector pose
+        pose_7d_current, j_matrix = your_fk(dh_params, tmp_q, base_pos)
+
+        # Calculate position error
+        position_current = pose_7d_current[:3]
+        position_target = new_pose[:3]
+        position_error = position_target - position_current
+
+        # Calculate orientation error
+        quaternion_current = pose_7d_current[3:]
+        quaternion_target = new_pose[3:]
+        rotation_current = R.from_quat(quaternion_current)
+        rotation_target = R.from_quat(quaternion_target)
+        rotation_error_vector = (rotation_target * rotation_current.inv()).as_rotvec()
+
+        # Combine position and orientation errors
+        delta_x = np.concatenate((position_error, rotation_error_vector))
+
+        # Get Jacobian Transpose
+        jacobian_transpose = j_matrix.T
+
+        # Get the identity matrix (I), (6x6 for a 6-DOF task space)
+        identity_matrix = np.identity(j_matrix.shape[0])
+
+        # Calculate the term to invert
+        term_to_invert = j_matrix @ jacobian_transpose + (damping_lambda ** 2) * identity_matrix
+
+        # Invert the term
+        term_inverted = np.linalg.inv(term_to_invert)
+
+        # Compute the final joint angle changes
+        delta_q = jacobian_transpose @ term_inverted @ delta_x
+
+        # Update joint angles
+        tmp_q += step_rate * delta_q
+
+        # Enforce joint limits to keep angles within the physical range
+        tmp_q = np.clip(tmp_q, joint_limits[:, 0], joint_limits[:, 1])
+
+        # Check for convergence
+        if np.linalg.norm(delta_x) < stop_thresh:
+            break
+    ###############################################
     return np.array(tmp_q)  # 6 DoF
 
 
