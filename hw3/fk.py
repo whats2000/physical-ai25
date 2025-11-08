@@ -104,8 +104,8 @@ def your_fk(
     ###############################################
 
     # Store the transformation matrix to the origin of each joint frame
-    transformed_frames = [np.copy(pose_matrix)]
-    transformed_cumulative = np.copy(pose_matrix)
+    joint_transforms = [np.copy(pose_matrix)]
+    cumulative_transform = np.copy(pose_matrix)
 
     # Compute Forward-Kinematic
     for i in range(6):
@@ -132,19 +132,19 @@ def your_fk(
         ])
 
         # Chain the matrix multiplication
-        transformed_cumulative = transformed_cumulative @ transformation_i
-        transformed_frames.append(transformed_cumulative)
+        cumulative_transform = cumulative_transform @ transformation_i
+        joint_transforms.append(cumulative_transform)
 
-    # The final pose_matrix is the last one we calculated (T_world_to_6)
-    pose_matrix = transformed_cumulative
+    # The final pose_matrix is the last cumulative transformation
+    pose_matrix = cumulative_transform
 
-    # Get the end-effector position (p_e) from the final pose matrix
+    # Get the end-effector position from the final pose matrix
     end_effector_position = pose_matrix[0:3, 3]
 
     # Iterate through each joint again to build the Jacobian columns
     for i in range(6):
         # Get the transformation to the start of the i-th joint
-        transformed_link = transformed_frames[i]
+        transformed_link = joint_transforms[i]
 
         # Get the z-axis (axis of rotation) from the rotation matrix part
         z_axis = transformed_link[0:3, 2]
