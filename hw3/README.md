@@ -89,7 +89,7 @@ Test your ik implementation in the Transporter Networks 's frame work by inferen
 - execution example
  ```shell
 cd ravens
-CUDA_VISIBLE_DEVICES=-1 python ravens/test.py --assets_root=./ravens/environments/assets/ --disp=True --task=block-insertion-easy --agent=transporter --n_demos=1000 --n_steps=20000# No need to use GPU
+CUDA_VISIBLE_DEVICES=-1 python ravens/test.py --assets_root=./ravens/environments/assets/ --disp=True --task=block-insertion-easy --agent=transporter --n_demos=1000 --n_steps=20000 # No need to use GPU
 ###################################### log ###########################################
 
 Loading pre-trained model at 20000 iterations.
