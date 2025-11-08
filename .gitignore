@@ -14,3 +14,6 @@ hw2/occupancy_map.png
 hw2/simplified_path_map.png
 habitat-sim
 *.docx
+/hw3/ravens/block-insertion-easy-test
+/hw3/ravens/checkpoints/block-insertion-easy-transporter-1000-0
+*.zip

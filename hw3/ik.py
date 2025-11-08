@@ -1,22 +1,21 @@
-import argparse, time, os, json
+import argparse
+import json
+import os
+import time
 from typing import Union, List, Tuple, Optional
 
 import numpy as np
-import math as m
-from scipy.spatial.transform import Rotation as R
-from scipy.linalg import pinv
-
 # for simulator
 import pybullet as p  # type: ignore
 import pybullet_data
+from scipy.linalg import pinv
+from scipy.spatial.transform import Rotation as R
 from typing_extensions import TypedDict
-
-# for geometry information
-from hw3_utils.bullet_utils import draw_coordinate, get_matrix_from_pose, get_pose_from_matrix, pose_7d_to_6d, \
-    pose_6d_to_7d
 
 # you may use your forward kinematic algorithm to compute
 from fk import your_fk, get_ur5_dh_params
+# for geometry information
+from hw3_utils.bullet_utils import draw_coordinate
 from pybullet_robot_envs.envs.ur5_envs.ur5_env import ur5Env
 
 SIM_TIMESTEP = 1.0 / 240.0
