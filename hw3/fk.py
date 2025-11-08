@@ -149,11 +149,11 @@ def your_fk(
         # Get the z-axis (axis of rotation) from the rotation matrix part
         z_axis = transformed_link[0:3, 2]
 
-        # Get the origin of the frame (position) from the translation part
-        frame_position = transformed_link[0:3, 3]
+        # Get the origin of the joint from the transformation matrix
+        joint_origin = transformed_link[0:3, 3]
 
         # Calculate the linear velocity part of the Jacobian column
-        jacobian[0:3, i] = np.cross(z_axis, end_effector_position - frame_position)
+        jacobian[0:3, i] = np.cross(z_axis, end_effector_position - joint_origin)
 
         # Calculate the angular velocity part of the Jacobian column
         jacobian[3:6, i] = z_axis
