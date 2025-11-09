@@ -242,7 +242,7 @@ def your_ik_damped_least_squares(
     step_rate = 0.5
 
     # Set the damping factor (lambda) for Damped Least Squares
-    damping_lambda = 0.01
+    damping_lambda = 0.1
 
     # iterative optimization
     for i in range(max_iters):
